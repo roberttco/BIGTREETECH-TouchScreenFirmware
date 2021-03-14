@@ -5,14 +5,14 @@ static uint8_t ublSlot;
 static bool ublIsSaving = true;
 static bool ublSlotSaved = false;
 
-/* called by parseAck() to notify ABL process status */
+// called by parseAck() to notify ABL process status
 void ablUpdateStatus(bool succeeded)
 {
   bool savingEnabled = true;
 
   init_label(tempTitle);
   tempTitle.index = LABEL_ABL_SETTINGS;
-  labelChar(tempMsg, LABEL_BL_COMPLETE);
+  LABELCHAR(tempMsg, LABEL_BL_COMPLETE);
 
   switch (infoMachineSettings.leveling)
   {
@@ -23,34 +23,32 @@ void ablUpdateStatus(bool succeeded)
     }
     case BL_UBL:
     {
+      savingEnabled = false;
       tempTitle.index = LABEL_ABL_SETTINGS_UBL;
 
       sprintf(&tempMsg[strlen(tempMsg)], "\n %s", textSelect(LABEL_BL_SMART_FILL));
-
-      savingEnabled = false;
       break;
     }
     default:
       break;
   }
 
-  if (succeeded)                                           // if bed leveling process successfully terminated, allow to save to EEPROM
+  if (succeeded)  // if bed leveling process successfully terminated, allow to save to EEPROM
   {
     BUZZER_PLAY(sound_success);
 
     if (savingEnabled && infoMachineSettings.EEPROM == 1)
     {
       sprintf(&tempMsg[strlen(tempMsg)], "\n %s", textSelect(LABEL_EEPROM_SAVE_INFO));
-
-      setDialogText(tempTitle.index, (u8 *) tempMsg, LABEL_CONFIRM, LABEL_CANCEL);
+      setDialogText(tempTitle.index, (uint8_t *) tempMsg, LABEL_CONFIRM, LABEL_CANCEL);
       showDialog(DIALOG_TYPE_SUCCESS, saveEepromSettings, NULL, NULL);
     }
     else
     {
-      popupReminder(DIALOG_TYPE_SUCCESS, tempTitle.index, (u8 *) tempMsg);
+      popupReminder(DIALOG_TYPE_SUCCESS, tempTitle.index, (uint8_t *) tempMsg);
     }
   }
-  else                                                     // if bed leveling process failed, provide an error dialog
+  else  // if bed leveling process failed, provide an error dialog
   {
     BUZZER_PLAY(sound_error);
 
@@ -66,8 +64,7 @@ void ublSaveloadConfirm(void)
   }
   else
   {
-    storeCmd("G29 S%d\n", ublSlot);
-    ublSlotSaved = true;
+    ublSlotSaved = storeCmd("G29 S%d\n", ublSlot);
   }
 }
 
@@ -76,15 +73,17 @@ void menuUBLSaveLoad(void)
   MENUITEMS UBLSaveLoadItems = {
     // title
     LABEL_ABL_SETTINGS_UBL_SAVE,
-    // icon                         label
-    {{ICON_EEPROM_SAVE,             LABEL_ABL_SLOT0},
-     {ICON_EEPROM_SAVE,             LABEL_ABL_SLOT1},
-     {ICON_EEPROM_SAVE,             LABEL_ABL_SLOT2},
-     {ICON_EEPROM_SAVE,             LABEL_ABL_SLOT3},
-     {ICON_BACKGROUND,              LABEL_BACKGROUND},
-     {ICON_BACKGROUND,              LABEL_BACKGROUND},
-     {ICON_BACKGROUND,              LABEL_BACKGROUND},
-     {ICON_BACK,                    LABEL_BACK},}
+    // icon                          label
+    {
+      {ICON_EEPROM_SAVE,             LABEL_ABL_SLOT0},
+      {ICON_EEPROM_SAVE,             LABEL_ABL_SLOT1},
+      {ICON_EEPROM_SAVE,             LABEL_ABL_SLOT2},
+      {ICON_EEPROM_SAVE,             LABEL_ABL_SLOT3},
+      {ICON_BACKGROUND,              LABEL_BACKGROUND},
+      {ICON_BACKGROUND,              LABEL_BACKGROUND},
+      {ICON_BACKGROUND,              LABEL_BACKGROUND},
+      {ICON_BACK,                    LABEL_BACK},
+    }
   };
 
   KEY_VALUES key_num = KEY_IDLE;
@@ -126,7 +125,6 @@ void menuUBLSaveLoad(void)
         else
         {
           ublSlotSaved = false;
-
           infoMenu.cur--;
         }
         break;
@@ -156,18 +154,26 @@ void menuABL(void)
   MENUITEMS autoLevelingItems = {
     // title
     LABEL_ABL_SETTINGS,
-    // icon                         label
-    {{ICON_LEVELING,                LABEL_START},
-     {ICON_BACKGROUND,              LABEL_BACKGROUND},
-     {ICON_BACKGROUND,              LABEL_BACKGROUND},
-     {ICON_BACKGROUND,              LABEL_BACKGROUND},
-     {ICON_BLTOUCH,                 LABEL_BLTOUCH},
-     {ICON_BACKGROUND,              LABEL_BACKGROUND},
-     {ICON_BACKGROUND,              LABEL_BACKGROUND},
-     {ICON_BACK,                    LABEL_BACK}}
+    // icon                          label
+    {
+      {ICON_LEVELING,                LABEL_START},
+      {ICON_BACKGROUND,              LABEL_BACKGROUND},
+      {ICON_BACKGROUND,              LABEL_BACKGROUND},
+      {ICON_BACKGROUND,              LABEL_BACKGROUND},
+      {ICON_BLTOUCH,                 LABEL_BLTOUCH},
+      {ICON_BACKGROUND,              LABEL_BACKGROUND},
+      {ICON_HEAT,                    LABEL_PREHEAT},
+      {ICON_BACK,                    LABEL_BACK},
+    }
   };
 
   KEY_VALUES key_num = KEY_IDLE;
+
+  if (infoSettings.touchmi_sensor != 0)
+  {
+    autoLevelingItems.items[4].icon = ICON_NOZZLE;
+    autoLevelingItems.items[4].label.index = LABEL_TOUCHMI;
+  }
 
   switch (infoMachineSettings.leveling)
   {
@@ -199,22 +205,24 @@ void menuABL(void)
 
         switch (infoMachineSettings.leveling)
         {
-          case BL_BBL:                                     // if Bilinear Bed Leveling
+          case BL_BBL:  // if Bilinear Bed Leveling
             storeCmd("G29\n");
-            storeCmd("M118 A1 BBL Complete\n");
             break;
 
-          case BL_UBL:                                     // if Unified Bed Leveling
+          case BL_UBL:  // if Unified Bed Leveling
             storeCmd("G29 P1\n");
+            // Run this multiple times since it only fills some missing points, not all.
             storeCmd("G29 P3\n");
-            storeCmd("M118 A1 UBL Complete\n");
+            storeCmd("G29 P3\n");
+            storeCmd("G29 P3\n");
             break;
 
-          default:                                         // if any other Auto Bed Leveling
+          default:  // if any other Auto Bed Leveling
             storeCmd("G29\n");
-            storeCmd("M118 A1 ABL Complete\n");
             break;
         }
+
+        storeCmd("M118 A1 ABL Completed\n");
         break;
 
       case KEY_ICON_1:
@@ -228,10 +236,26 @@ void menuABL(void)
         break;
 
       case KEY_ICON_4:
-        infoMenu.menu[++infoMenu.cur] = menuBLTouch;
+        if (infoSettings.touchmi_sensor != 0)
+          infoMenu.menu[++infoMenu.cur] = menuTouchMi;
+        else
+          infoMenu.menu[++infoMenu.cur] = menuBLTouch;
+        break;
+
+      case KEY_ICON_6:
+        infoMenu.menu[++infoMenu.cur] = menuPreheat;
         break;
 
       case KEY_ICON_7:
+        for (uint8_t i = 0; i < MAX_HEATER_COUNT; i++)
+        {
+          if (heatGetTargetTemp(i) > 0)
+          {
+            setDialogText(LABEL_WARNING, LABEL_HEATERS_ON, LABEL_CONFIRM, LABEL_CANCEL);
+            showDialog(DIALOG_TYPE_QUESTION, heatCoolDown, NULL, NULL);
+            break;
+          }
+        }
         infoMenu.cur--;
         break;
 

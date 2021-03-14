@@ -1,10 +1,16 @@
 #include "MeshEditor.h"
 #include "includes.h"
 
-#define MESH_GRID_SIZE (MESH_GRID_MAX_POINTS_X * MESH_GRID_MAX_POINTS_Y)
-#define MESH_MAX_PARSED_ROWS 30                            // Set the maximum number of data rows to parse for retrieving the mesh
+#define MESH_GRID_SIZE             (MESH_GRID_MAX_POINTS_X * MESH_GRID_MAX_POINTS_Y)
+#define MESH_MAX_PARSED_ROWS       30                      // maximum number of data rows to parse for retrieving the mesh
                                                            // grid from the "M420 T1 V1" command output provided by the Marlin FW
-#define MESH_LINE_EDGE_DISTANCE 4
+#define MESH_MAX_RETRIEVE_ATTEMPTS 20                      // maximum number of attempts to retrieve the data format from Marlin FW
+#define MESH_LINE_EDGE_DISTANCE    4
+
+// colors
+#define VALUE_FONT_COLOR   infoSettings.font_color
+#define VALUE_BG_COLOR     infoSettings.list_button_color
+#define VALUE_BORDER_COLOR 0x4b0d
 
 typedef struct
 {
@@ -13,15 +19,6 @@ typedef struct
   const bool rowsInverted;
   const char *const echoMsg;
 } MESH_DATA_FORMAT;
-
-const MESH_DATA_FORMAT meshDataFormat[] = {
-  {1, 4, 1, "Mesh Bed Level data:"},                       // MBL
-  {0, 2, 0, "Bed Topography Report for CSV:"},             // UBL
-  {1, 2, 1, "Bilinear Leveling Grid:"},                    // ABL Bilinear
-  {0, 1, 1, "Bed Level Correction Matrix:"},               // ABL Linear or 3-Point
-};
-
-void (*meshSaveCallbackPtr)(void) = NULL;
 
 typedef enum
 {
@@ -71,8 +68,6 @@ typedef struct
   char saveTitle[120];
 } MESH_DATA;
 
-static MESH_DATA *meshData = NULL;
-
 #define MESH_GRID_HEIGHT     (LCD_HEIGHT - ICON_START_Y)
 #define MESH_GRID_WIDTH      MESH_GRID_HEIGHT
 #define MESH_POINT_MIN_RATIO 3.0f
@@ -89,7 +84,7 @@ static MESH_DATA *meshData = NULL;
 #define MESH_KEY_HEIGHT  (LCD_HEIGHT / MESH_KEY_ROW_NUM)
 #define MESH_KEY_WIDTH   (LCD_WIDTH - MESH_GRID_WIDTH) / MESH_KEY_COL_NUM
 
-#if MESH_LEFT_KEYBOARD == 1
+#ifdef MESH_LEFT_KEYBOARD
   #define MESH_GRID_X0 (LCD_WIDTH - MESH_GRID_WIDTH)
   #define MESH_GRID_Y0 ICON_START_Y
   #define MESH_INFO_X0 (LCD_WIDTH - MESH_GRID_WIDTH)
@@ -105,16 +100,13 @@ static MESH_DATA *meshData = NULL;
   #define MESH_KEY_Y0  0
 #endif
 
-#define MESH_INFO_NUM 4
-#define MESH_KEY_NUM  9
-#define MESH_AREA_NUM 3
-
 typedef enum
 {
   ME_INFO_MIN = 0,
   ME_INFO_MAX,
   ME_INFO_ORIG,
   ME_INFO_CUR,
+  ME_INFO_NUM,                                             // number of infos
   ME_INFO_IDLE = IDLE_TOUCH,
 } MESH_INFO_VALUES;
 
@@ -129,6 +121,7 @@ typedef enum
   ME_KEY_PREV,
   ME_KEY_NEXT,
   ME_KEY_DOWN,
+  ME_KEY_NUM,                                              // number of keys
   ME_KEY_IDLE = IDLE_TOUCH,
 } MESH_KEY_VALUES;
 
@@ -137,13 +130,14 @@ typedef enum
   ME_AREA_GRID = 0,
   ME_AREA_INFO,
   ME_AREA_KEY,
+  ME_AREA_NUM,                                             // number of areas
   ME_AREA_IDLE = IDLE_TOUCH,
 } MESH_AREA_VALUES;
 
 const GUI_RECT meshGridRect = {MESH_GRID_X0, MESH_GRID_Y0, MESH_GRID_X0 + MESH_GRID_WIDTH, MESH_GRID_Y0 + MESH_GRID_HEIGHT};
 
-const GUI_RECT meshInfoRect[MESH_INFO_NUM] = {
-#if MESH_LEFT_KEYBOARD == 1
+const GUI_RECT meshInfoRect[ME_INFO_NUM] = {
+#ifdef MESH_LEFT_KEYBOARD
   {MESH_INFO_X0 + 1 * MESH_INFO_WIDTH, MESH_INFO_Y0 + 0 * MESH_INFO_HEIGHT, MESH_INFO_X0 + 2 * MESH_INFO_WIDTH, MESH_INFO_Y0 + 1 * MESH_INFO_HEIGHT},// min value
   {MESH_INFO_X0 + 2 * MESH_INFO_WIDTH, MESH_INFO_Y0 + 0 * MESH_INFO_HEIGHT, MESH_INFO_X0 + 3 * MESH_INFO_WIDTH, MESH_INFO_Y0 + 1 * MESH_INFO_HEIGHT},// max value
   {MESH_INFO_X0 + 0 * MESH_INFO_WIDTH, MESH_INFO_Y0 + 0 * MESH_INFO_HEIGHT, MESH_INFO_X0 + 1 * MESH_INFO_WIDTH, MESH_INFO_Y0 + 1 * MESH_INFO_HEIGHT},// original value
@@ -155,8 +149,8 @@ const GUI_RECT meshInfoRect[MESH_INFO_NUM] = {
   {MESH_KEY_X0 + 0 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 2 * MESH_KEY_HEIGHT, MESH_KEY_X0 + 2 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 3 * MESH_KEY_HEIGHT},        // current value
 };
 
-const GUI_RECT meshKeyRect[MESH_KEY_NUM] = {
-#if MESH_LEFT_KEYBOARD == 1
+const GUI_RECT meshKeyRect[ME_KEY_NUM] = {
+#ifdef MESH_LEFT_KEYBOARD
   {MESH_KEY_X0 + 1 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 0 * MESH_KEY_HEIGHT, MESH_KEY_X0 + 2 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 1 * MESH_KEY_HEIGHT},        // SAVE
   {MESH_KEY_X0 + 0 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 0 * MESH_KEY_HEIGHT, MESH_KEY_X0 + 1 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 1 * MESH_KEY_HEIGHT},        // OK
   {MESH_KEY_X0 + 1 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 1 * MESH_KEY_HEIGHT, MESH_KEY_X0 + 2 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 2 * MESH_KEY_HEIGHT},        // RESET
@@ -167,14 +161,23 @@ const GUI_RECT meshKeyRect[MESH_KEY_NUM] = {
   {MESH_KEY_X0 + 0 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 1 * MESH_KEY_HEIGHT, MESH_KEY_X0 + 1 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 2 * MESH_KEY_HEIGHT},        // RESET
   {MESH_KEY_X0 + 1 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 1 * MESH_KEY_HEIGHT, MESH_KEY_X0 + 2 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 2 * MESH_KEY_HEIGHT},        // HOME
 #endif
+  // current value
   {MESH_KEY_X0 + 0 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 2 * MESH_KEY_HEIGHT, MESH_KEY_X0 + 2 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 3 * MESH_KEY_HEIGHT},        // EDIT
+
+  // arrow keys
   {MESH_KEY_X0 + 0 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 3 * MESH_KEY_HEIGHT, MESH_KEY_X0 + 2 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 4 * MESH_KEY_HEIGHT},        // UP
   {MESH_KEY_X0 + 0 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 4 * MESH_KEY_HEIGHT, MESH_KEY_X0 + 1 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 5 * MESH_KEY_HEIGHT},        // PREV
   {MESH_KEY_X0 + 1 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 4 * MESH_KEY_HEIGHT, MESH_KEY_X0 + 2 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 5 * MESH_KEY_HEIGHT},        // NEXT
   {MESH_KEY_X0 + 0 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 5 * MESH_KEY_HEIGHT, MESH_KEY_X0 + 2 * MESH_KEY_WIDTH, MESH_KEY_Y0 + 6 * MESH_KEY_HEIGHT},        // DOWN
 };
 
-const char *const meshKeyString[MESH_KEY_NUM] = {
+const GUI_RECT meshAreaRect[ME_AREA_NUM] = {
+  {MESH_GRID_X0, MESH_GRID_Y0, MESH_GRID_X0 + MESH_GRID_WIDTH, MESH_GRID_Y0 + MESH_GRID_HEIGHT},             // grid area
+  {MESH_INFO_X0, MESH_INFO_Y0, MESH_INFO_X0 + MESH_GRID_WIDTH, MESH_INFO_Y0 + ICON_START_Y},                 // info area
+  {MESH_KEY_X0, MESH_KEY_Y0, MESH_KEY_X0 + (LCD_WIDTH - MESH_GRID_WIDTH), MESH_KEY_Y0 + LCD_HEIGHT},         // keyboard area
+};
+
+const char *const meshKeyString[ME_KEY_NUM] = {
   "\u08A7",                                                // SAVE
   "\u0894",                                                // OK
   "\u08A5",                                                // RESET
@@ -186,11 +189,15 @@ const char *const meshKeyString[MESH_KEY_NUM] = {
   "\u02C5",                                                // DOWN
 };
 
-const GUI_RECT meshAreaRect[MESH_AREA_NUM] = {
-  {MESH_GRID_X0, MESH_GRID_Y0, MESH_GRID_X0 + MESH_GRID_WIDTH, MESH_GRID_Y0 + MESH_GRID_HEIGHT},             // grid area
-  {MESH_INFO_X0, MESH_INFO_Y0, MESH_INFO_X0 + MESH_GRID_WIDTH, MESH_INFO_Y0 + ICON_START_Y},                 // info area
-  {MESH_KEY_X0, MESH_KEY_Y0, MESH_KEY_X0 + (LCD_WIDTH - MESH_GRID_WIDTH), MESH_KEY_Y0 + LCD_HEIGHT},         // keyboard area
+const MESH_DATA_FORMAT meshDataFormat[] = {
+  {1, 4, 1, "Mesh Bed Level data:"},                       // MBL
+  {0, 2, 0, "Bed Topography Report for CSV:"},             // UBL
+  {1, 2, 1, "Bilinear Leveling Grid:"},                    // ABL Bilinear
+  {0, 1, 1, "Bed Level Correction Matrix:"},               // ABL Linear or 3-Point
 };
+
+void (*meshSaveCallbackPtr)(void) = NULL;
+static MESH_DATA *meshData = NULL;
 
 void meshInitData(void)
 {
@@ -230,7 +237,7 @@ void meshInitData(void)
   meshSaveCallbackPtr = NULL;
 }
 
-void meshAllocData(void)
+static inline void meshAllocData(void)
 {
   if (meshData != NULL)                                    // if data already exist (e.g. when the menu is reloaded), continue to use the existing data
     return;
@@ -257,7 +264,7 @@ void meshDeallocData(void)
 bool processKnownDataFormat(char *dataRow)
 {
   bool isKnown = false;
-  u8 i;
+  uint8_t i;
 
   for (i = 0; i < COUNT(meshDataFormat); i++)
   {
@@ -317,7 +324,7 @@ bool meshGetStatus(void)
   return true;
 }
 
-uint16_t meshGetSize(void)
+static inline uint16_t meshGetSize(void)
 {
   if (!meshGetStatus())
     return 0;
@@ -325,7 +332,7 @@ uint16_t meshGetSize(void)
   return meshData->dataSize;
 }
 
-uint16_t meshGetColsNum(void)
+static inline uint16_t meshGetColsNum(void)
 {
   if (!meshGetStatus())
     return 0;
@@ -333,7 +340,7 @@ uint16_t meshGetColsNum(void)
   return meshData->colsNum;
 }
 
-uint16_t meshGetRowsNum(void)
+static inline uint16_t meshGetRowsNum(void)
 {
   if (!meshGetStatus())
     return 0;
@@ -341,22 +348,22 @@ uint16_t meshGetRowsNum(void)
   return meshData->rowsNum;
 }
 
-uint16_t meshGetIndex(void)
+static inline uint16_t meshGetIndex(void)
 {
   return meshData->index;
 }
 
-uint16_t meshGetCol(void)
+static inline uint16_t meshGetCol(void)
 {
   return meshData->col;
 }
 
-uint16_t meshGetRow(void)
+static inline uint16_t meshGetRow(void)
 {
   return meshData->row;
 }
 
-uint16_t meshSetIndex(int32_t index)
+static inline uint16_t meshSetIndex(int32_t index)
 {
   if (meshGetStatus())
   {
@@ -364,13 +371,13 @@ uint16_t meshSetIndex(int32_t index)
 
     meshData->index = index;
     meshData->col = meshData->index % meshData->colsNum;
-    meshData->row = meshData->index / meshData->rowsNum;;
+    meshData->row = meshData->index / meshData->colsNum;
   }
 
   return meshData->index;
 }
 
-uint16_t meshSetIndexByCol(int32_t col)
+static inline uint16_t meshSetIndexByCol(int32_t col)
 {
   if (meshGetStatus())
   {
@@ -383,7 +390,7 @@ uint16_t meshSetIndexByCol(int32_t col)
   return meshData->index;
 }
 
-uint16_t meshSetIndexByRow(int32_t row)
+static inline uint16_t meshSetIndexByRow(int32_t row)
 {
   if (meshGetStatus())
   {
@@ -396,12 +403,12 @@ uint16_t meshSetIndexByRow(int32_t row)
   return meshData->index;
 }
 
-uint16_t meshGetJ()
+static inline uint16_t meshGetJ(void)
 {
   return (meshData->rowsNum - 1) - meshData->row;
 }
 
-uint16_t meshGetValueRow(uint16_t index)
+static inline uint16_t meshGetValueRow(uint16_t index)
 {
   if (meshData->rowsInverted)
     return (meshData->rowsNum - 1) - (index / meshData->colsNum);
@@ -409,17 +416,17 @@ uint16_t meshGetValueRow(uint16_t index)
     return (index / meshData->colsNum);
 }
 
-float meshGetValueOrig(uint16_t index)
+static inline float meshGetValueOrig(uint16_t index)
 {
   return meshData->dataOrig[(meshGetValueRow(index) * meshData->colsNum) + (index % meshData->colsNum)];
 }
 
-float meshGetValue(uint16_t index)
+static inline float meshGetValue(uint16_t index)
 {
   return meshData->data[(meshGetValueRow(index) * meshData->colsNum) + (index % meshData->colsNum)];
 }
 
-bool meshSetValue(float value)
+static inline bool meshSetValue(float value)
 {
   meshData->data[(meshGetValueRow(meshData->index) * meshData->colsNum) + meshData->col] = value;
 
@@ -428,12 +435,12 @@ bool meshSetValue(float value)
   return true;
 }
 
-float meshGetValueMin(void)
+static inline float meshGetValueMin(void)
 {
   return meshData->valueMin;
 }
 
-float meshGetValueMax(void)
+static inline float meshGetValueMax(void)
 {
   return meshData->valueMax;
 }
@@ -498,7 +505,7 @@ uint16_t meshGetRGBColor(float value)
   return (r << 11) | (g << 5) | (b);
 }
 
-void meshDrawGridCell(uint16_t index, uint16_t edgeDistance, bool clearBkGround)
+void meshDrawGridCell(uint16_t index, uint16_t edgeDistance, bool clearBgColor)
 {
   float value = meshGetValue(index);
   uint16_t col = index % meshGetColsNum();
@@ -512,7 +519,7 @@ void meshDrawGridCell(uint16_t index, uint16_t edgeDistance, bool clearBkGround)
   else if (value == meshGetValueMin() || value == meshGetValueMax())
     radius = MIN(cellWidth, cellHeight) / MESH_POINT_MED_RATIO;
 
-  if (clearBkGround)
+  if (clearBgColor)
     GUI_ClearRect(meshGridRect.x0 + col * cellWidth + 1, meshGridRect.y0 + row * cellHeight + 1,
                   meshGridRect.x0 + (col + 1) * cellWidth - 1, meshGridRect.y0 + (row + 1) * cellHeight - 1);
 
@@ -544,13 +551,13 @@ void meshDrawGrid(void)
   }
 }
 
-void meshDrawInfoCell(const GUI_RECT *rect, float *val, bool largeFont, uint16_t color, uint16_t bkColor, uint16_t edgeDistance, bool clearBkGround)
+void meshDrawInfoCell(const GUI_RECT *rect, float *val, bool largeFont, uint16_t color, uint16_t bgColor, uint16_t edgeDistance, bool clearBgColor)
 {
-  uint16_t origBkColor = GUI_GetBkColor();
+  uint16_t origBgColor = GUI_GetBkColor();
 
-  if (val != NULL || clearBkGround)
+  if (val != NULL || clearBgColor)
   {
-    GUI_SetBkColor(bkColor);
+    GUI_SetBkColor(bgColor);
     GUI_ClearRect(rect->x0 + edgeDistance, rect->y0 + edgeDistance, rect->x1 - edgeDistance, rect->y1 - edgeDistance);
   }
 
@@ -560,17 +567,14 @@ void meshDrawInfoCell(const GUI_RECT *rect, float *val, bool largeFont, uint16_t
 
     sprintf(tempstr, "%.3f", *val);
 
-    if (largeFont)
-      setLargeFont(true);
-
     GUI_SetColor(color);
-    GUI_DispStringInPrect(rect, (u8 *) tempstr);
-
+    setLargeFont(largeFont);
+    GUI_DispStringInPrect(rect, (uint8_t *) tempstr);
     setLargeFont(false);
   }
 
   GUI_SetColor(infoSettings.font_color);
-  GUI_SetBkColor(origBkColor);
+  GUI_SetBkColor(origBgColor);
 }
 
 void meshDrawInfo(float *minVal, float *maxVal, float *origVal, float *curVal)
@@ -582,7 +586,7 @@ void meshDrawInfo(float *minVal, float *maxVal, float *origVal, float *curVal)
     meshDrawInfoCell(&meshInfoRect[ME_INFO_MAX], maxVal, false, meshGetRGBColor(*maxVal), infoSettings.bg_color, 1, false);
 
   meshDrawInfoCell(&meshInfoRect[ME_INFO_ORIG], origVal, false, infoSettings.font_color, infoSettings.bg_color, 1, false);
-  meshDrawInfoCell(&meshInfoRect[ME_INFO_CUR], curVal, true, infoSettings.font_color, infoSettings.status_xyz_bg_color, 2, false);
+  meshDrawInfoCell(&meshInfoRect[ME_INFO_CUR], curVal, true, VALUE_FONT_COLOR, VALUE_BG_COLOR, 2, false);
 }
 
 void meshDrawFullInfo(void)
@@ -595,24 +599,30 @@ void meshDrawFullInfo(void)
   meshDrawInfo(&minValue, &maxValue, &origValue, &curValue);
 }
 
-// Get keypress for Mesh Editor
-MESH_KEY_VALUES meshGetKeyValue(void)
+void meshKeyPress(uint8_t index, uint8_t isPressed)
 {
-  return (MESH_KEY_VALUES) KEY_GetValue(COUNT(meshKeyRect), meshKeyRect);
-}
+  if (index >= ME_KEY_NUM)
+    return;
 
-void meshKeyPress(u8 index, u8 isPressed)
-{
-  if (index < MESH_KEY_NUM)
+  if (isPressed)
   {
-    if (!isPressed)
+    if (index != ME_KEY_EDIT)
+      GUI_SetColor(infoSettings.list_border_color);
+    else
+      GUI_SetColor(VALUE_FONT_COLOR);
+  }
+  else
+  {
+    if (index != ME_KEY_EDIT)
       GUI_SetColor(infoSettings.bg_color);
     else
-      GUI_SetColor(infoSettings.list_border_color);
-
-    GUI_DrawRect(meshKeyRect[index].x0 + 2, meshKeyRect[index].y0 + 2, meshKeyRect[index].x1 - 2, meshKeyRect[index].y1 - 2);
-    GUI_SetColor(infoSettings.font_color);
+      GUI_SetColor(VALUE_BG_COLOR);
   }
+
+  GUI_DrawRect(meshKeyRect[index].x0 + 2, meshKeyRect[index].y0 + 2, meshKeyRect[index].x1 - 2, meshKeyRect[index].y1 - 2);
+
+  // restore default font color
+  GUI_SetColor(infoSettings.font_color);
 }
 
 void meshDrawKeyboard(void)
@@ -623,14 +633,15 @@ void meshDrawKeyboard(void)
 
   GUI_SetTextMode(GUI_TEXTMODE_TRANS);
 
-  for (uint8_t i = 0; i < MESH_KEY_NUM; i++)
+  for (uint8_t i = 0; i < ME_KEY_NUM; i++)
   {
     if (!(i == ME_KEY_SAVE || i == ME_KEY_OK || i == ME_KEY_RESET || i == ME_KEY_HOME))            // if not a unicode string
-      GUI_DispStringInPrect(&meshKeyRect[i], (u8 *) meshKeyString[i]);
+      GUI_DispStringInPrect(&meshKeyRect[i], (uint8_t *) meshKeyString[i]);
   }
 
   if (infoMachineSettings.EEPROM == 1)
     DrawCharIcon(&meshKeyRect[ME_KEY_SAVE], MIDDLE, ICONCHAR_SAVE, false, 0);
+
   DrawCharIcon(&meshKeyRect[ME_KEY_OK], MIDDLE, ICONCHAR_OK, false, 0);
   DrawCharIcon(&meshKeyRect[ME_KEY_RESET], MIDDLE, ICONCHAR_RESET, false, 0);
   DrawCharIcon(&meshKeyRect[ME_KEY_HOME], MIDDLE, ICONCHAR_MOVE, false, 0);
@@ -642,24 +653,33 @@ void meshDrawKeyboard(void)
 
 void meshDrawMenu(void)
 {
-  GUI_Clear(infoSettings.bg_color);                                                                // clear screen
+  // clear screen
+  GUI_Clear(infoSettings.bg_color);
 
   GUI_SetColor(infoSettings.list_border_color);
 
-  GUI_DrawPrect(&meshAreaRect[ME_AREA_GRID]);                                                      // draw grid area borders
-  GUI_DrawPrect(&meshAreaRect[ME_AREA_INFO]);                                                      // draw info area borders
-  GUI_DrawPrect(&meshAreaRect[ME_AREA_KEY]);                                                       // draw key borders
+  // draw area borders
+  GUI_DrawPrect(&meshAreaRect[ME_AREA_GRID]);              // draw grid area borders
+  GUI_DrawPrect(&meshAreaRect[ME_AREA_INFO]);              // draw info area borders
+  GUI_DrawPrect(&meshAreaRect[ME_AREA_KEY]);               // draw key borders
 
-  GUI_SetColor(infoSettings.font_color);
+  // draw value area borders (outer)
+  GUI_DrawRect(meshInfoRect[ME_INFO_CUR].x0, meshInfoRect[ME_INFO_CUR].y0,
+               meshInfoRect[ME_INFO_CUR].x1, meshInfoRect[ME_INFO_CUR].y1);
 
+  GUI_SetColor(VALUE_BORDER_COLOR);
+
+  // draw value area borders (inner)
   GUI_DrawRect(meshInfoRect[ME_INFO_CUR].x0 + 1, meshInfoRect[ME_INFO_CUR].y0 + 1,
-               meshInfoRect[ME_INFO_CUR].x1 - 1, meshInfoRect[ME_INFO_CUR].y1 - 1);                // draw value area borders
+               meshInfoRect[ME_INFO_CUR].x1 - 1, meshInfoRect[ME_INFO_CUR].y1 - 1);
 
   GUI_SetColor(infoSettings.font_color);
 
+  // draw grid and keyboard
   meshDrawGrid();
   meshDrawKeyboard();
 
+  // draw values
   if (meshGetStatus())
   {
     float minValue = meshGetValueMin();
@@ -679,7 +699,7 @@ void meshSave(bool saveOnChange)
 
   if (infoMachineSettings.EEPROM == 1)
   {
-    setDialogText((u8 *) meshData->saveTitle, LABEL_EEPROM_SAVE_INFO, LABEL_CONFIRM, LABEL_CANCEL);
+    setDialogText((uint8_t *) meshData->saveTitle, LABEL_EEPROM_SAVE_INFO, LABEL_CONFIRM, LABEL_CANCEL);
     showDialog(DIALOG_TYPE_QUESTION, meshSaveCallback, NULL, NULL);
   }
 }
@@ -696,7 +716,6 @@ bool meshIsWaitingFirstData(void)
 bool meshIsWaitingData(void)
 {
   if (meshData == NULL ||
-    meshData->status == ME_DATA_IDLE ||
     meshData->status == ME_DATA_FULL ||
     meshData->status == ME_DATA_FAILED)                    // if mesh editor is not running or is not waiting for data
     return false;
@@ -748,12 +767,25 @@ void meshUpdateData(char *dataRow)
   if (meshIsWaitingFirstData())                            // if waiting for first data
   {
     if (processKnownDataFormat(dataRow))                   // if known data format, change state to EMPTY and proceed with data handling
+    {
+      meshData->parsedRows = 0;
       meshData->status = ME_DATA_EMPTY;
+    }
+    else if (meshData->parsedRows < MESH_MAX_RETRIEVE_ATTEMPTS)      // max number of attempts to retrieve data format from Marlin
+    {
+      meshData->parsedRows++;
+
+      return;
+    }
     else
+    {
       failed = true;
+    }
   }
   else if (!meshIsWaitingData())                           // if not waiting for data, nothing to do
+  {
     return;
+  }
 
   if (!failed)
   {
@@ -795,7 +827,9 @@ void meshUpdateData(char *dataRow)
         memcpy(&meshData->data, &meshData->dataOrig, sizeof(meshData->dataOrig));
       }
       else                                                 // if mesh grid is smaller than a 1x1 matrix, data grid is marked as failed
+      {
         failed = true;
+      }
     }
   }
 
@@ -803,11 +837,11 @@ void meshUpdateData(char *dataRow)
   {
     meshData->status = ME_DATA_FAILED;
 
-    labelChar(tempMsg, LABEL_PROCESS_ABORTED);
+    LABELCHAR(tempMsg, LABEL_PROCESS_ABORTED);
 
     sprintf(&tempMsg[strlen(tempMsg)], "\n %s", dataRow);
 
-    popupReminder(DIALOG_TYPE_ERROR, LABEL_MESH_EDITOR, (u8 *) tempMsg);
+    popupReminder(DIALOG_TYPE_ERROR, LABEL_MESH_EDITOR, (uint8_t *) tempMsg);
 
     infoMenu.cur--;                                        // exit from mesh editor menu. it avoids to loop in case of persistent error
 
@@ -826,27 +860,26 @@ void menuMeshEditor(void)
 
   meshAllocData();                                         // allocates and initialize mesh data if not already allocated and initialized
 
-  mustStoreCmd("M420 V1 T1\n");                            // retrieve the mesh data
-
-  oldStatus = curStatus = meshGetStatus();
+  oldStatus = curStatus = meshGetStatus();                 // after allocation, we acces data status etc...
   oldIndex = curIndex = meshGetIndex();
   forceHoming = true;
   forceExit = false;
 
-  setMenuTypeCustom(&meshDrawMenu);
+  mustStoreCmd("M420 V1 T1\n");                            // retrieve the mesh data
 
+  setMenu(MENU_TYPE_FULLSCREEN, NULL, COUNT(meshKeyRect), meshKeyRect, meshKeyPress, &meshDrawMenu);
   meshDrawMenu();
 
-#if LCD_ENCODER_SUPPORT
-  encoderPosition = 0;
-#endif
+  #if LCD_ENCODER_SUPPORT
+    encoderPosition = 0;
+  #endif
 
   while (infoMenu.menu[infoMenu.cur] == menuMeshEditor)
   {
     curStatus = meshGetStatus();                           // always load current status
     curIndex = meshGetIndex();                             // always load current index
 
-    key_num = meshGetKeyValue();
+    key_num = menuKeyGetValue();
     switch (key_num)
     {
       case ME_KEY_UP:
@@ -873,11 +906,13 @@ void menuMeshEditor(void)
             forceHoming = false;
 
             mustStoreCmd("G28\n");                         // only the first time, home the printer
+            probeHeightStop(infoSettings.z_raise_probing); // raise nozzle
           }
 
           curValue = menuMeshTuner(meshGetCol(), meshGetJ(), meshGetValue(meshGetIndex()));
           meshSetValue(curValue);
 
+          setMenu(MENU_TYPE_FULLSCREEN, NULL, COUNT(meshKeyRect), meshKeyRect, meshKeyPress, &meshDrawMenu);
           meshDrawMenu();
         }
         break;
@@ -899,6 +934,7 @@ void menuMeshEditor(void)
         forceHoming = false;
 
         mustStoreCmd("G28\n");                             // force homing (e.g. if steppers are disarmed)
+        probeHeightStop(infoSettings.z_raise_probing);     // raise nozzle
         break;
 
       case ME_KEY_SAVE:
@@ -945,7 +981,6 @@ void menuMeshEditor(void)
       oldIndex = curIndex;
     }
 
-    loopBackEnd();
     loopProcess();
   }
 
@@ -954,7 +989,5 @@ void menuMeshEditor(void)
     meshSave(true);                                        // check for changes and ask to save on eeprom
 
     meshDeallocData();                                     // deallocate mesh data
-
-    setMenuTypeCustom(NULL);
   }
 }
