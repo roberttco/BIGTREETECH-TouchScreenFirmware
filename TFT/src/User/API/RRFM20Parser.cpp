@@ -1,5 +1,5 @@
 #include "RRFM20Parser.hpp"
-#include "FlashStore.h"
+#include "includes.h"
 
 /*
   Parses a document like the following for M20 S2
@@ -35,7 +35,7 @@
     ],
     "next": 0
   }
- */
+*/
 const TCHAR *skip_number(const TCHAR *value)
 {
   if (isdigit(*value))

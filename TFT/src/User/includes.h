@@ -64,7 +64,6 @@
 #include "ListManager.h"
 #include "Numpad.h"            // it uses infoSettings
 #include "ST7920_Emulator.h"   // it uses infoSettings
-#include "TouchProcess.h"
 #include "ui_draw.h"
 
 // User/API
@@ -72,7 +71,6 @@
 #include "BabystepControl.h"
 #include "boot.h"
 #include "BuzzerControl.h"
-#include "CaseLightControl.h"
 #include "comment.h"
 #include "config.h"
 #include "coordinate.h"
@@ -103,6 +101,7 @@
 #include "SpeedControl.h"
 #include "Temperature.h"
 #include "Touch_Encoder.h"
+#include "Touch_Screen.h"
 
 // User/Menu
 #include "ABL.h"
@@ -129,6 +128,7 @@
 #include "MeshEditor.h"
 #include "MeshTuner.h"
 #include "MeshValid.h"
+#include "Monitoring.h"
 #include "More.h"
 #include "Move.h"
 #include "NotificationMenu.h"

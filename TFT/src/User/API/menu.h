@@ -12,7 +12,7 @@ extern "C" {
 #define IDLE_TOUCH 0xFFFF
 
 #define ITEM_PER_PAGE     8
-#define PS_TOUCH_OFFSET   2  // printing screen icon index offset for touch input
+#define PS_TOUCH_OFFSET   2                            // printing screen icon index offset for touch input
 #define MENU_RECT_COUNT   (ITEM_PER_PAGE * 2 + 1)      // 8 items + title bar
 #define SS_RECT_COUNT     (ITEM_PER_PAGE * 2 + 1 + 1)  // 8 items + title bar + infobox
 #define TM_RECT_COUNT     (ITEM_PER_PAGE * 2 + 1 + 1)  // 8 items + title bar + tempbox
@@ -112,16 +112,8 @@ typedef enum
   SYS_STATUS_BUSY,
   SYS_STATUS_DISCONNECTED,
   SYS_STATUS_LISTENING,
-  SYS_STATUS_NORMAL
+  SYS_STATUS_VOL_CHANGE
 } SYS_STATUS;
-
-typedef struct
-{
-  GUI_RECT rect;
-  uint32_t time;
-  uint8_t status;
-  uint16_t inf;
-} REMINDER;
 
 typedef enum
 {
@@ -180,11 +172,11 @@ extern const GUI_RECT rect_of_titleBar[1];
 void setMenuType(MENU_TYPE type);
 MENU_TYPE getMenuType(void);
 
-void reminderMessage(int16_t inf, SYS_STATUS status);
-void volumeReminderMessage(int16_t inf, SYS_STATUS status);
+SYS_STATUS getReminderStatus(void);
+void setReminderMsg(int16_t inf, SYS_STATUS status);
 void notificationDot(void);
 
-void busyIndicator(SYS_STATUS status);
+void drawBusySign(void);
 
 MENUITEMS *getCurMenuItems(void);
 LISTITEMS *getCurListItems(void);
@@ -209,22 +201,18 @@ void showLiveInfo(uint8_t index, const LIVE_INFO * liveicon, bool redrawIcon);
 void displayExhibitHeader(const char * titleStr, const char * unitStr);
 void displayExhibitValue(const char * valueStr);
 
-void itemDrawIconPress(uint8_t position, uint8_t is_press);
-void itemDrawIconPress_PS(uint8_t position, uint8_t is_press);
 KEY_VALUES menuKeyGetValue(void);
 
 // Smart home
 #ifdef SMART_HOME
   #define LONG_TOUCH (MODE_SWITCHING_INTERVAL / 3)  // keep it lower than MODE_SWITCHING_INTERVAL
-
-  void loopCheckBackPress(void);
 #endif
 
 void menuDummy(void);
 void loopBackEnd(void);
 void loopFrontEnd(void);
 void loopProcess(void);
-void loopProcessToCondition(CONDITION_CALLBACK condCallback);
+void loopProcessAndGUI(void);
 
 #ifdef __cplusplus
 }
