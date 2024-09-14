@@ -38,7 +38,6 @@ void Serial_Init(SERIAL_PORT_INDEX portIndex)
   if (portIndex == PORT_1 || portIndex == ALL_PORTS)  // if primary or all serial ports, initialize the primary serial port first
   {
     InfoHost_Init(false);  // initialize infoHost when disconnected
-    coordinateSetKnown(false);
 
     Serial_Config(serialPort[PORT_1].port, serialPort[PORT_1].cacheSizeRX, serialPort[PORT_1].cacheSizeTX, baudrateValues[infoSettings.serial_port[PORT_1]]);
   }
@@ -105,15 +104,15 @@ void Serial_Forward(SERIAL_PORT_INDEX portIndex, const char * msg)
   {
     // forward data only if serial port is enabled
     if (infoSettings.serial_port[portIndex] > 0
-        #ifdef SERIAL_DEBUG_PORT
-          && serialPort[portIndex].port != SERIAL_DEBUG_PORT  // do not forward data to serial debug port
-        #endif
-        )
+      #ifdef SERIAL_DEBUG_PORT
+        && serialPort[portIndex].port != SERIAL_DEBUG_PORT  // do not forward data to serial debug port
+      #endif
+      )
       Serial_Put(serialPort[portIndex].port, msg);  // pass on the message to the port
   }
 }
 
-bool Serial_NewDataAvailable(uint8_t port)
+bool Serial_DataAvailableRX(uint8_t port)
 {
   // NOTE: used 32 bit variables for performance reasons
 
@@ -209,12 +208,12 @@ void Serial_GetFromUART(void)
   {
     // retrieve data only if serial port is enabled
     if (infoSettings.serial_port[portIndex] > 0
-        #ifdef SERIAL_DEBUG_PORT
-          && serialPort[portIndex].port != SERIAL_DEBUG_PORT  // do not forward data to serial debug port
-        #endif
-        )
+      #ifdef SERIAL_DEBUG_PORT
+        && serialPort[portIndex].port != SERIAL_DEBUG_PORT  // do not forward data to serial debug port
+      #endif
+      )
     {
-      while (Serial_NewDataAvailable(serialPort[portIndex].port) && Serial_Get(serialPort[portIndex].port, cmd, CMD_MAX_SIZE) != 0)
+      while (Serial_DataAvailableRX(serialPort[portIndex].port) && Serial_Get(serialPort[portIndex].port, cmd, CMD_MAX_SIZE) != 0)
       {
         handleCmd(cmd, portIndex);
       }
