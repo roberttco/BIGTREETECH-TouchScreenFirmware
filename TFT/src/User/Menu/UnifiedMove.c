@@ -2,10 +2,12 @@
 #include "includes.h"
 
 #if DELTA_PROBE_TYPE != 0  // if Delta printer
-  void deltaCalibration(void)
-  {
-    mustStoreCmd("G33\n");
-  }
+
+static void deltaCalibration(void)
+{
+  mustStoreCmd("G33\n");
+}
+
 #endif
 
 void menuUnifiedMove(void)
@@ -43,6 +45,7 @@ void menuUnifiedMove(void)
   while (MENU_IS(menuUnifiedMove))
   {
     key_num = menuKeyGetValue();
+
     switch (key_num)
     {
       case KEY_ICON_0:
@@ -72,7 +75,8 @@ void menuUnifiedMove(void)
           #if DELTA_PROBE_TYPE != 2  // if not removable probe
             deltaCalibration();
           #else  // if removable probe
-            popupDialog(DIALOG_TYPE_ALERT, LABEL_WARNING, LABEL_CONNECT_PROBE, LABEL_CONTINUE, LABEL_CANCEL, deltaCalibration, NULL, NULL);
+            popupDialog(DIALOG_TYPE_ALERT, LABEL_WARNING, LABEL_CONNECT_PROBE, LABEL_CONTINUE, LABEL_CANCEL,
+                        deltaCalibration, NULL, NULL);
           #endif
         #endif
         break;

@@ -17,7 +17,11 @@ void menuTuning(void)
         {ICON_NULL,                    LABEL_NULL},
       #endif
       {ICON_NULL,                    LABEL_NULL},
-      {ICON_NULL,                    LABEL_NULL},
+      #ifdef DEBUG_MONITORING
+        {ICON_FAST_SPEED,              LABEL_TEST},
+      #else
+        {ICON_NULL,                    LABEL_NULL},
+      #endif
       {ICON_NULL,                    LABEL_NULL},
       {ICON_BACK,                    LABEL_BACK},
     }
@@ -45,6 +49,7 @@ void menuTuning(void)
   while (MENU_IS(menuTuning))
   {
     key_num = menuKeyGetValue();
+
     switch (key_num)
     {
       case KEY_ICON_0:
@@ -52,7 +57,6 @@ void menuTuning(void)
           OPEN_MENU(menuMPC);
         else
           OPEN_MENU(menuPid);
-
         break;
 
       case KEY_ICON_1:
@@ -60,21 +64,22 @@ void menuTuning(void)
           OPEN_MENU(menuPid);
         else
           OPEN_MENU(menuTuneExtruder);
-
         break;
 
       case KEY_ICON_2:
         if (hasMPC() && infoSettings.bed_en)
+        {
           OPEN_MENU(menuTuneExtruder);
+        }
         #if DELTA_PROBE_TYPE == 0  // if not Delta printer
           else
           {
             storeCmd("M206\n");
+
             zOffsetSetMenu(false);  // use Home Offset menu
             OPEN_MENU(menuZOffset);
           }
         #endif
-
         break;
 
       case KEY_ICON_3:
@@ -82,12 +87,19 @@ void menuTuning(void)
           if (hasMPC() && infoSettings.bed_en)
           {
             storeCmd("M206\n");
+
             zOffsetSetMenu(false);  // use Home Offset menu
             OPEN_MENU(menuZOffset);
           }
         #endif
-
         break;
+
+      #ifdef DEBUG_MONITORING
+        case KEY_ICON_5:
+          monitoringSetMenu(true);  // use Stress Test Monitoring menu
+          OPEN_MENU(menuMonitoring);
+          break;
+      #endif
 
       case KEY_ICON_7:
         CLOSE_MENU();

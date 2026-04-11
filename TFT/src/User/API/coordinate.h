@@ -31,29 +31,30 @@ typedef struct
   bool handled;
 } E_AXIS_BACKUP;
 
-extern const char axis_id[TOTAL_AXIS];
+extern const char axisID[TOTAL_AXIS];
 extern E_AXIS_BACKUP eAxisBackup;
 
-bool coorGetRelative(void);
-void coorSetRelative(bool mode);
-bool eGetRelative(void);
-void eSetRelative(bool mode);
+bool coordinateGetRelative(void);
+void coordinateSetRelative(bool mode);
+bool coordinateGetRelativeExtruder(void);
+void coordinateSetRelativeExtruder(bool mode);
 bool coordinateIsKnown(void);
 void coordinateSetKnown(bool known);
 float coordinateGetAxisTarget(AXIS axis);
 void coordinateSetAxisTarget(AXIS axis, float position);
 uint32_t coordinateGetFeedRate(void);
 void coordinateSetFeedRate(uint32_t feedrate);
-void coordinateGetAll(COORDINATE *tmp);
+void coordinateGetAll(COORDINATE * tmp);
 float coordinateGetExtruderActual(void);
 void coordinateSetExtruderActualSteps(float steps);
 float coordinateGetAxisActual(AXIS axis);
 void coordinateSetAxisActual(AXIS axis, float position);
-void coordinateGetAllActual(COORDINATE *tmp);
-void coordinateQuerySetWait(bool wait);
-void coordinateQuery(uint8_t delay);
-void coordinateQueryTurnOff(void);
+void coordinateGetAllActual(COORDINATE * tmp);
 float coordinateGetAxis(AXIS axis);
+
+void coordinateQueryClearSendingWaiting(void);  // called in sendQueueCmd(). Clear sending waiting for coordinate query
+void coordinateQuery(uint8_t delay);            // query for coordinate
+void coordinateQueryTurnOff(void);
 
 #ifdef __cplusplus
 }

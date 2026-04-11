@@ -12,7 +12,7 @@ void ablUpdateStatus(bool succeeded)
 
   init_label(tempTitle);
   tempTitle.index = LABEL_ABL_SETTINGS;
-  LABELCHAR(tempMsg, LABEL_BL_COMPLETE);
+  LABEL_CHAR(tempMsg, LABEL_BL_COMPLETE);
 
   switch (infoMachineSettings.leveling)
   {
@@ -22,9 +22,9 @@ void ablUpdateStatus(bool succeeded)
 
     case BL_UBL:
       savingEnabled = false;
-      tempTitle.index = LABEL_ABL_SETTINGS_UBL;
 
-      sprintf(&tempMsg[strlen(tempMsg)], "\n %s", textSelect(LABEL_BL_SMART_FILL));
+      tempTitle.index = LABEL_ABL_SETTINGS_UBL;
+      sprintf(strchr(tempMsg, '\0'), "\n %s", textSelect(LABEL_BL_SMART_FILL));
       break;
 
     default:
@@ -37,13 +37,13 @@ void ablUpdateStatus(bool succeeded)
 
     if (savingEnabled && infoMachineSettings.EEPROM == 1)
     {
-      sprintf(&tempMsg[strlen(tempMsg)], "\n %s", textSelect(LABEL_EEPROM_SAVE_INFO));
+      sprintf(strchr(tempMsg, '\0'), "\n %s", textSelect(LABEL_EEPROM_SAVE_INFO));
 
-      popupDialog(DIALOG_TYPE_SUCCESS, tempTitle.index, (uint8_t *) tempMsg, LABEL_CONFIRM, LABEL_CANCEL, saveEepromSettings, NULL, NULL);
+      popupDialog(DIALOG_TYPE_SUCCESS, tempTitle.index, tempMsg, LABEL_CONFIRM, LABEL_CANCEL, saveEepromSettings, NULL, NULL);
     }
     else
     {
-      popupReminder(DIALOG_TYPE_SUCCESS, tempTitle.index, (uint8_t *) tempMsg);
+      popupReminder(DIALOG_TYPE_SUCCESS, tempTitle.index, tempMsg);
     }
   }
   else  // if bed leveling process failed, provide an error dialog
@@ -54,7 +54,7 @@ void ablUpdateStatus(bool succeeded)
   }
 }
 
-// Start ABL process
+// start ABL process
 void ablStart(void)
 {
   storeCmd("G28\n");
@@ -70,6 +70,9 @@ void ablStart(void)
       storeCmd("G29 P3\n");  // run this multiple times since it only fills some missing points, not all
       storeCmd("G29 P3\n");
       storeCmd("G29 P3\n");
+      // find Mean Mesh Height: with option "C" this will automatically execute a G29 P6 C[mean height].
+      // Ideally the Mesh is adjusted for a Mean Height of 0.00 and the Z-Probe measuring 0.0 at the Z homing position
+      storeCmd("G29 P5 C\n");
       break;
 
     default:  // if any other Auto Bed Leveling
@@ -81,7 +84,7 @@ void ablStart(void)
     storeCmd("M118 P0 ABL Completed\n");
 }
 
-void ublSaveloadConfirm(void)
+static void ublSaveloadConfirm(void)
 {
   if (!ublIsSaving)
     storeCmd("G29 L%d\n", ublSlot);
@@ -89,7 +92,7 @@ void ublSaveloadConfirm(void)
     ublSlotSaved = storeCmd("G29 S%d\n", ublSlot);
 }
 
-void menuUBLSaveLoad(void)
+static void menuUBLSaveLoad(void)
 {
   MENUITEMS UBLSaveLoadItems = {
     // title
@@ -133,12 +136,14 @@ void menuUBLSaveLoad(void)
       case KEY_ICON_3:
         ublSlot = key_num;
 
-        popupDialog(DIALOG_TYPE_QUESTION, UBLSaveLoadItems.title.index, LABEL_CONFIRMATION, LABEL_CONFIRM, LABEL_CANCEL, ublSaveloadConfirm, NULL, NULL);
+        popupDialog(DIALOG_TYPE_QUESTION, UBLSaveLoadItems.title.index, LABEL_CONFIRMATION, LABEL_CONFIRM, LABEL_CANCEL,
+                    ublSaveloadConfirm, NULL, NULL);
         break;
 
       case KEY_ICON_7:
         if (ublSlotSaved == true && infoMachineSettings.EEPROM == 1)
-          popupDialog(DIALOG_TYPE_QUESTION, LABEL_ABL_SETTINGS_UBL, LABEL_ABL_SLOT_EEPROM, LABEL_CONFIRM, LABEL_CANCEL, saveEepromSettings, NULL, NULL);
+          popupDialog(DIALOG_TYPE_QUESTION, LABEL_ABL_SETTINGS_UBL, LABEL_ABL_SLOT_EEPROM, LABEL_CONFIRM, LABEL_CANCEL,
+                      saveEepromSettings, NULL, NULL);
 
         ublSlotSaved = false;
 

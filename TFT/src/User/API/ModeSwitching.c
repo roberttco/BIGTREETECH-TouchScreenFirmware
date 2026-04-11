@@ -1,18 +1,18 @@
 #include "ModeSwitching.h"
 #include "includes.h"
 
-bool modeFreshBoot = true;
-bool modeSwitching = false;
+static bool modeFreshBoot = true;
+static bool modeSwitching = false;
 
 // change UI mode
 void Mode_Switch(void)
 {
-  int8_t nowMode = GET_BIT(infoSettings.mode, 0);  // Marlin mode or Touch mode
+  int8_t mode = GET_BIT(infoSettings.mode, 0);  // Marlin mode or Touch mode
   infoMenu.cur = 0;
 
-  HW_InitMode(nowMode);
+  HW_InitMode(mode);
 
-  switch (nowMode)
+  switch (mode)
   {
     case MODE_SERIAL_TSC:
       GUI_RestoreColorDefault();
@@ -31,14 +31,11 @@ void Mode_Switch(void)
         {
           uint32_t startUpTime = OS_GetTimeMs();
 
-          heatSetUpdateSeconds(TEMPERATURE_QUERY_FAST_SECONDS);
           LOGO_ReadDisplay();
-          updateNextHeatCheckTime();  // send "M105" after a delay, because of mega2560 will be hanged when received data at startup
+          heatSetUpdateSeconds(TEMPERATURE_QUERY_FAST_SECONDS);
+          heatSetNextUpdateTime();  // send "M105" after a delay, because of mega2560 will be hanged when received data at startup
 
-          while (OS_GetTimeMs() - startUpTime < BTT_BOOTSCREEN_TIME)  // display logo BTT_BOOTSCREEN_TIME ms
-          {
-            loopProcess();
-          }
+          TASK_LOOP_WHILE(OS_GetTimeMs() - startUpTime < BTT_BOOTSCREEN_TIME);  // display logo BTT_BOOTSCREEN_TIME ms
 
           heatSetUpdateSeconds(TEMPERATURE_QUERY_SLOW_SECONDS);
           modeFreshBoot = false;
@@ -49,12 +46,17 @@ void Mode_Switch(void)
     case MODE_MARLIN:
       #ifdef HAS_EMULATOR
         if (infoSettings.serial_always_on == ENABLED)
-          updateNextHeatCheckTime();  // send "M105" after a delay, because of mega2560 will be hanged when received data at startup
+          heatSetNextUpdateTime();  // send "M105" after a delay, because of mega2560 will be hanged when received data at startup
 
         REPLACE_MENU(menuMarlinMode);
       #endif
       break;
   }
+}
+
+void Mode_EnableSwitching(bool isEnabled)
+{
+  modeSwitching = isEnabled;
 }
 
 void Mode_CheckSwitching(void)

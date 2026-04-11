@@ -1,29 +1,14 @@
 #include "FeatureSettings.h"
 #include "includes.h"
 
-static uint16_t fe_cur_page = 0;
-
-// parameter values
-
-#define ITEM_TOGGLE_AUTO_NUM 3
-const LABEL itemToggleAuto[ITEM_TOGGLE_AUTO_NUM] =
-{
-  LABEL_OFF,
-  LABEL_ON,
-  LABEL_AUTO
-};
-
-#define ITEM_TOGGLE_SMART_NUM 2
-const LABEL itemToggleSmart[ITEM_TOGGLE_SMART_NUM] =
-{
-  LABEL_ON,
-  LABEL_SMART
-};
-
 // add key number index of the items
 typedef enum
 {
-  SKEY_EMULATED_M600 = 0,
+  SKEY_COMMAND_CHECKSUM = 0,
+  SKEY_ADVANCED_OK,
+  SKEY_TX_DELAY,
+  SKEY_TX_PREFETCH,
+  SKEY_EMULATED_M600,
   SKEY_EMULATED_M109_M190,
   SKEY_EVENT_LED,
   SKEY_FILE_COMMENT_PARSING,
@@ -51,23 +36,73 @@ typedef enum
   SKEY_COUNT                  // keep this always at the end
 } SKEY_LIST;
 
-void resetSettings(void)
+// parameter values
+
+#define ITEM_TX_DELAY_NUM (MAX_TX_DELAY - MIN_TX_DELAY + 1)
+static const char * const labelTxDelay[ITEM_TX_DELAY_NUM] = {
+  // item value text(only for custom value)
+  "0",
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "10"
+};
+
+#ifdef PS_ON_PIN
+  #define ITEM_TOGGLE_AUTO_NUM (MAX_AUTO_SHUTDOWN - MIN_AUTO_SHUTDOWN + 1)
+  static const LABEL itemToggleAuto[ITEM_TOGGLE_AUTO_NUM] = {
+    LABEL_OFF,
+    LABEL_ON,
+    LABEL_AUTO
+  };
+#endif
+
+#ifdef FIL_RUNOUT_PIN
+  #define ITEM_TOGGLE_SMART_NUM 2
+  static const LABEL itemToggleSmart[ITEM_TOGGLE_SMART_NUM] = {
+    LABEL_ON,
+    LABEL_SMART
+  };
+#endif
+
+static uint16_t fe_cur_page = 0;
+
+static void resetSettings(void)
 {
   initSettings();
   storePara();
+
   popupReminder(DIALOG_TYPE_SUCCESS, LABEL_INFO, LABEL_SETTINGS_RESET_DONE);
 }
 
 // perform action on button press
-void updateFeatureSettings(uint8_t item_index)
+static inline void updateFeatureSettings(uint8_t item_index)
 {
   switch (item_index)
   {
+    case SKEY_COMMAND_CHECKSUM:
+    case SKEY_ADVANCED_OK:
+      TOGGLE_BIT(infoSettings.general_settings, ((item_index - SKEY_COMMAND_CHECKSUM) + INDEX_COMMAND_CHECKSUM));
+      break;
+
+    case SKEY_TX_DELAY:
+      infoSettings.tx_delay = (infoSettings.tx_delay + 1) % ITEM_TX_DELAY_NUM;
+
+      InfoHost_UpdateTxDelay();  // update tx delay to infoSettings.tx_delay
+      break;
+
+    case SKEY_TX_PREFETCH:
     case SKEY_EMULATED_M600:
     case SKEY_EMULATED_M109_M190:
     case SKEY_EVENT_LED:
     case SKEY_FILE_COMMENT_PARSING:
-      TOGGLE_BIT(infoSettings.general_settings, ((item_index - SKEY_EMULATED_M600) + INDEX_EMULATED_M600));
+      TOGGLE_BIT(infoSettings.general_settings, ((item_index - SKEY_TX_PREFETCH) + INDEX_TX_PREFETCH));
       break;
 
     case SKEY_SERIAL_ALWAYS_ON:
@@ -121,26 +156,37 @@ void updateFeatureSettings(uint8_t item_index)
       break;
 
     case SKEY_RESET_SETTINGS:
-      popupDialog(DIALOG_TYPE_ALERT, LABEL_SETTINGS_RESET, LABEL_SETTINGS_RESET_INFO, LABEL_CONFIRM, LABEL_CANCEL, resetSettings, NULL, NULL);
+      popupDialog(DIALOG_TYPE_ALERT, LABEL_SETTINGS_RESET, LABEL_SETTINGS_RESET_INFO, LABEL_CONFIRM, LABEL_CANCEL,
+                  resetSettings, NULL, NULL);
       break;
 
     default:
       return;
   }
-}  // updateFeatureSettings
+} // updateFeatureSettings
 
 // load values on page change and reload
-void loadFeatureSettings(LISTITEM * item, uint16_t item_index, uint8_t itemPos)
+static void loadFeatureSettings(LISTITEM * item, uint16_t item_index, uint8_t itemPos)
 {
   if (item_index < SKEY_COUNT)
   {
     switch (item_index)
     {
+      case SKEY_COMMAND_CHECKSUM:
+      case SKEY_ADVANCED_OK:
+        item->icon = iconToggle[GET_BIT(infoSettings.general_settings, ((item_index - SKEY_COMMAND_CHECKSUM) + INDEX_COMMAND_CHECKSUM))];
+        break;
+
+      case SKEY_TX_DELAY:
+        setDynamicTextValue(SKEY_TX_DELAY, labelTxDelay[infoSettings.tx_delay]);
+        break;
+
+      case SKEY_TX_PREFETCH:
       case SKEY_EMULATED_M600:
       case SKEY_EMULATED_M109_M190:
       case SKEY_EVENT_LED:
       case SKEY_FILE_COMMENT_PARSING:
-        item->icon = iconToggle[GET_BIT(infoSettings.general_settings, ((item_index - SKEY_EMULATED_M600) + INDEX_EMULATED_M600))];
+        item->icon = iconToggle[GET_BIT(infoSettings.general_settings, ((item_index - SKEY_TX_PREFETCH) + INDEX_TX_PREFETCH))];
         break;
 
       case SKEY_SERIAL_ALWAYS_ON:
@@ -173,7 +219,8 @@ void loadFeatureSettings(LISTITEM * item, uint16_t item_index, uint8_t itemPos)
         case SKEY_FIL_RUNOUT:
         {
           LABEL sensorLabel = itemToggleSmart[GET_BIT(infoSettings.runout, 1)];
-          item->valueLabel.index = (GET_BIT(infoSettings.runout, 0)) ? sensorLabel.index : LABEL_OFF ;
+
+          item->valueLabel.index = GET_BIT(infoSettings.runout, 0) ? sensorLabel.index : LABEL_OFF;
           break;
         }
       #endif
@@ -203,7 +250,7 @@ void loadFeatureSettings(LISTITEM * item, uint16_t item_index, uint8_t itemPos)
         break;
     }
   }
-}  // loadFeatureSettings
+} // loadFeatureSettings
 
 void menuFeatureSettings(void)
 {
@@ -211,6 +258,10 @@ void menuFeatureSettings(void)
 
   // set item types
   LISTITEM settingPage[SKEY_COUNT] = {
+    {CHARICON_TOGGLE_ON,   LIST_TOGGLE,        LABEL_COMMAND_CHECKSUM,       LABEL_NULL},
+    {CHARICON_TOGGLE_ON,   LIST_TOGGLE,        LABEL_ADVANCED_OK,            LABEL_NULL},
+    {CHARICON_BLANK,       LIST_CUSTOMVALUE,   LABEL_TX_DELAY,               LABEL_DYNAMIC},
+    {CHARICON_TOGGLE_ON,   LIST_TOGGLE,        LABEL_TX_PREFETCH,            LABEL_NULL},
     {CHARICON_TOGGLE_ON,   LIST_TOGGLE,        LABEL_EMULATED_M600,          LABEL_NULL},
     {CHARICON_TOGGLE_ON,   LIST_TOGGLE,        LABEL_EMULATED_M109_M190,     LABEL_NULL},
     {CHARICON_TOGGLE_ON,   LIST_TOGGLE,        LABEL_EVENT_LED,              LABEL_NULL},

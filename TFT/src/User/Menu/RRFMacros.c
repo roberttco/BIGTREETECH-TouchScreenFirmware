@@ -2,11 +2,11 @@
 #include "includes.h"
 #include "RRFM20Parser.hpp"
 
-static const char *running_macro_name;
-extern const GUI_RECT titleRect;
+static const char * running_macro_name;
+static const GUI_RECT titleRect;
 
-// Scan files in RRF
-void scanInfoFilesFs(void)
+// scan files in RRF
+static void scanInfoFilesFs(void)
 {
   clearInfoFile();
   request_M20_rrf(infoFile.path, false, parseMacroListResponse);
@@ -18,12 +18,13 @@ void rrfShowRunningMacro(void)
   GUI_SetColor(infoSettings.reminder_color);
   GUI_DispStringInPrectEOL(&titleRect, LABEL_BUSY);
   GUI_RestoreColorDefault();
-  GUI_DispStringInRect(0, 0, LCD_WIDTH, LCD_HEIGHT, (uint8_t *)running_macro_name);
+  GUI_DispStringInRect(0, 0, LCD_WIDTH, LCD_HEIGHT, (uint8_t *) running_macro_name);
 }
 
-void runMacro(const char *display_name)
+static inline void runMacro(const char * display_name)
 {
   running_macro_name = display_name;
+
   rrfShowRunningMacro();
 
   request_M98(infoFile.path);
@@ -31,9 +32,9 @@ void runMacro(const char *display_name)
   exitFolder();
 }
 
-// Draw Macro file list
-// update items in list mode
-void macroListDraw(LISTITEM * item, uint16_t index, uint8_t itemPos)
+// draw Macro file list.
+// Update items in list mode
+static void macroListDraw(LISTITEM * item, uint16_t index, uint8_t itemPos)
 {
   if (index < infoFile.folderCount)
   {
@@ -55,16 +56,17 @@ void macroListDraw(LISTITEM * item, uint16_t index, uint8_t itemPos)
   }
 }
 
-// View and run macros stored in RRF firmware
+// view and run macros stored in RRF firmware
 void menuCallMacro(void)
 {
   uint16_t key_num = KEY_IDLE;
   uint8_t update = 1;
+
   infoFile.curPage = 0;
   infoFile.source = FS_ONBOARD_MEDIA;
 
   GUI_Clear(MENU_BACKGROUND_COLOR);
-  GUI_DispStringInRect(0, 0, LCD_WIDTH, LCD_HEIGHT, textSelect(LABEL_LOADING));
+  GUI_DispStringInRect(0, 0, LCD_WIDTH, LCD_HEIGHT, (uint8_t *) textSelect(LABEL_LOADING));
 
   scanInfoFilesFs();
 
@@ -80,11 +82,12 @@ void menuCallMacro(void)
     {
       case KEY_BACK:
         infoFile.curPage = 0;
+
         if (isRootFolder() == true)
         {
           clearInfoFile();
+
           CLOSE_MENU();
-          break;
         }
         else
         {
@@ -104,13 +107,14 @@ void menuCallMacro(void)
           {
             if (enterFolder(infoFile.folder[key_num]) == false)
               break;
+
             scanInfoFilesFs();
             update = 1;
             infoFile.curPage = 0;
           }
           else if (key_num < infoFile.fileCount + infoFile.folderCount)  // gcode
           {
-            if (infoHost.connected != true)
+            if (infoHost.connected == false)
               break;
 
             if (enterFolder(infoFile.longFile[key_num - infoFile.folderCount]) == false)
@@ -127,11 +131,11 @@ void menuCallMacro(void)
     {
       update = 0;
 
-      listViewCreate((LABEL){.address = (uint8_t *)infoFile.path}, NULL, infoFile.folderCount + infoFile.fileCount,
+      listViewCreate((LABEL){.address = infoFile.path}, NULL, infoFile.folderCount + infoFile.fileCount,
                      &infoFile.curPage, false, NULL, macroListDraw);
 
       // set scrolling title text
-      Scroll_CreatePara(&scrollLine, (uint8_t *)infoFile.path, &titleRect);
+      Scroll_CreatePara(&scrollLine, (uint8_t *) infoFile.path, &titleRect);
       GUI_SetBkColor(infoSettings.title_bg_color);
       GUI_ClearRect(0, 0, LCD_WIDTH, TITLE_END_Y);
       GUI_SetBkColor(infoSettings.bg_color);

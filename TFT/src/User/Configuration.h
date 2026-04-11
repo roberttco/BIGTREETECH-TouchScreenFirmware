@@ -1,7 +1,7 @@
 #ifndef _CONFIGURATION_H_
 #define _CONFIGURATION_H_
 
-#define CONFIG_VERSION 20220518
+#define CONFIG_VERSION 20250130
 
 //====================================================================================================
 //=============================== Settings Configurable On config.ini ================================
@@ -30,16 +30,139 @@
  *                P2: WIFI    (e.g. ESP3D)
  *                P3: UART 3  (e.g. OctoPrint)
  *                P4: UART 4
- *   Value range: P1: [min: 1, max: 9]
- *                P2: [min: 0, max: 9]
- *                P3: [min: 0, max: 9]
- *                P4: [min: 0, max: 9]
- *   Options: [OFF (port disabled): 0, 2400: 1, 9600: 2, 19200: 3, 38400: 4, 57600: 5, 115200: 6, 250000: 7, 500000: 8, 1000000: 9]
+ *   Value range: P1: [min: 1, max: 11]
+ *                P2: [min: 0, max: 11]
+ *                P3: [min: 0, max: 11]
+ *                P4: [min: 0, max: 11]
+ *   Options: [OFF (port disabled): 0, 2400: 1, 9600: 2, 19200: 3, 38400: 4, 57600: 5, 115200: 6, 230400: 7, 250000: 8, 500000: 9, 921600: 10, 1000000: 11]
  */
 #define SP_1 6  // Default: 6
 #define SP_2 0  // Default: 0
 #define SP_3 0  // Default: 0
 #define SP_4 0  // Default: 0
+
+/**
+ * Command Checksum
+ * If enabled:
+ * - The TFT enriches each G-code to be sent to the mainboard adding a leading sequential line number
+ *   and a trailing checksum appended after an "*" character used as separator.
+ *   The checksum is based on algorithm "CheckSum8 Xor" and it is calculated on the G-code with the
+ *   applied line number. E.g. "G28" is firstly enriched with a line number (e.g. "N1 G28") and
+ *   finally a checksum calculated on that enriched G-code is appended (e.g. "N1 G28*18").
+ *   A data integrity check (sequential line number check and checksum check) will be performed on
+ *   the mainboard.
+ *   In case of data mismatch (e.g. data corruption due to EMI on communication serial line):
+ *   - The mainboard will send to the TFT an error ACK message followed by a "Resend: " ACK message
+ *     to ask TFT to resend the G-code with the requested line number.
+ *   - The TFT will check the presence on an internal buffer of the G-code with the requested line
+ *     number:
+ *     - If found, the G-code is resent for a maximum of 3 attempts.
+ *     - If not found or the maximum number of attempts has been reached, the TFT will reset the line
+ *       number, with an "M110" G-code (immediately sent bypassing any other enqueued G-code), to the
+ *       requested line number just to try to avoid further retransmission requests for the same line
+ *       number or for any out of synch command already sent to the mainboard (if ADVANCED_OK feature
+ *       (see description of next setting "ADVANCED_OK") is enabled).
+ *
+ * NOTE: Disable it in case:
+ *       - Printing is controlled by a remote host (e.g. ESP3D, OctoPrint etc.) and a COMMAND_CHECKSUM
+ *         feature is enabled and managed by the remote host. Otherwise (COMMAND_CHECKSUM feature also
+ *         enabled in TFT), the TFT's COMMAND_CHECKSUM feature will always replace the one provided by
+ *         the remote host causing conflicts in case data mismatch will be notified by the mainboard.
+ *
+ *   Options: [disable: 0, enable: 1]
+ */
+#define COMMAND_CHECKSUM 0  // Default: 0
+
+/**
+ * Advanced OK
+ * If enabled:
+ * - If "ADVANCED_OK" feature is enabled in Configuration_adv.h in Marlin firmware, the TFT will use
+ *   the available G-code TX slots indication provided by the mainboard to schedule the transmission
+ *   of multiple G-codes, if any, for a maximum of the given indication.
+ * - If "ADVANCED_OK" feature is disabled in Configuration_adv.h in Marlin firmware, the TFT will
+ *   support the transmission of G-codes according to the configured "TX_SLOTS" setting (see
+ *   description of next setting "TX_SLOTS").
+ * If disabled, the TFT will provide the standard transmission logic based on one G-code per time.
+ *
+ * NOTE: Disable it in case:
+ *       - No ADVANCED_OK feature is requested/needed by the user.
+ *       - ADVANCED_OK feature is not providing good printing results or if the mainboard notifies
+ *         frequent error ACK messages (e.g. unknown command or command checksum missmatch (if
+ *         COMMAND_CHECKSUM feature is enabled)) to the TFT during printing even using high values
+ *         (e.g. 5 or more) for "TX_DELAY" setting (see description of next setting "TX_DELAY").
+ *         Furthermore, in case COMMAND_CHECKSUM feature is enabled any out of synch command already
+ *         sent to the mainboard will be discarded by the mainboard and not resent by the TFT due the
+ *         current implementation of COMMAND_CHECKSUM feature on the TFT is limited to buffer only
+ *         the last sent command and not all the pending commands.
+ *
+ *   Options: [disable: 0, enable: 1]
+ */
+#define ADVANCED_OK 0  // Default: 0
+
+/**
+ * TX Slots
+ * Used/effective only in case "ADVANCED_OK" is also enabled.
+ * Maximum number of G-code TX slots used by the TFT for the communication with the printer.
+ *
+ * NOTES:
+ *   - It requires "ADVANCED_OK" to be enabled.
+ *   - This setting allows a sort of static "ADVANCED_OK" feature implementation on TFT side just in
+ *     case "ADVANCED_OK" feature is disabled in Marlin firmware. You have to set it according to the
+ *     following key requirements:
+ *     - A value not bigger than "BUFSIZE" configured in Configuration_adv.h in Marlin firmware.
+ *     - "RX_BUFFER_SIZE" properly configured in Configuration_adv.h in Marlin firmware.
+ *       To be safe you need (MAX_CMD_SIZE * BUFSIZE) RX buffer. By default this is 96 * 4 bytes so
+ *       you would need to at least set RX_BUFFER_SIZE to 512 bytes, practically half of that will
+ *       be enough, but more is better/safer.
+ *   - Typically, a value of 2 is enough to keep the printer busy most of the time while preventing
+ *     buffer overruns on RX buffer. Thus, 2 is the suggested value in case users want to use the
+ *     static ADVANCED_OK feature allowed by this setting.
+ *
+ *   Value range: [min: 2, max: 16]
+ */
+#define TX_SLOTS 2  // Default: 1
+
+/**
+ * TX Delay
+ * Minimum delay (in ms) to apply between the last sent G-code and the next one to be sent to the
+ * mainboard.
+ * Minimum delay for the next G-code to send depends on ADVANCED_OK feature status:
+ * - If disabled: the delay is applied to the last received ACK message OK response timestamp.
+ * - If enabled: the delay is applied to the last sent G-code timestamp (timestamp taken when the
+ *   G-code transmission on serial line is completed).
+ *
+ * NOTE: Increase it in case:
+ *       - The mainboard notifies frequent error ACK messages (e.g. unknown command or command checksum
+ *         missmatch (if COMMAND_CHECKSUM feature is enabled)) to the TFT during printing in particular
+ *         when the reported command is slightly misswritten at the beginning (e.g. "M14 E" instead of
+ *         "M114 E", "20" instead of "M220", "221" instead of "M221", "GX108.607 Y96.632 E0.02052"
+ *         instead of "G1 X108.607 Y96.632 E0.02052" etc.).
+ *         Typically, to avoid those error messages:
+ *         - A value of 1-2 is emough if ADVANCED_OK feature is disabled.
+ *         - A value of 3-4 is emough if ADVANCED_OK feature is enabled.
+ *
+ *   Unit: [time in milliseconds]
+ *   Value range: [min: 0, max: 10]
+ */
+#define TX_DELAY 0  // Default: 0
+
+/**
+ * TX Prefetch
+ * Used/effective only when printing from TFT SD card / TFT USB disk.
+ * The TFT prefetches from TFT SD card / TFT USB disk the next G-code to be sent to the mainboard
+ * so it will be immediately ready to be sent to the mainboard (no extra latency to read, parse
+ * and enqueue from TFT media) when the G-code is scheduled to be sent.
+ *
+ * NOTE: Disable it in case:
+ *       - The mainboard notifies frequent error ACK messages (e.g. unknown command or command checksum
+ *         missmatch (if COMMAND_CHECKSUM feature is enabled)) to the TFT during printing in particular
+ *         when the reported command is slightly misswritten at the beginning (e.g. "M14 E" instead of
+ *         "M114 E", "20" instead of "M220", "221" instead of "M221", "GX108.607 Y96.632 E0.02052"
+ *         instead of "G1 X108.607 Y96.632 E0.02052" etc.).
+ *
+ *   Options: [disable: 0, enable: 1]
+ */
+#define TX_PREFETCH 0  // Default: 0
 
 /**
  * Emulated M600
@@ -170,7 +293,7 @@
  *   Options: [OFF: 0, POPUP: 1, TOAST: 2]
  *     OFF:   No notification. The message is ignored.
  *     POPUP: Display a popup window for user confirmation.
- *     TOAST: A non-blocking Toast notification is displayed for few seconds. No user interaction is needed.
+ *     TOAST: A non-blocking toast notification is displayed for few seconds. No user interaction is needed.
  */
 #define ACK_NOTIFICATION 1  // Default: 1
 
@@ -348,7 +471,7 @@
  * Show banner text at the top of the TFT in Marlin Mode.
  *   Options: [disable: 0, enable: 1]
  */
-#define MARLIN_SHOW_TITLE 1  // Default: 1
+#define MARLIN_SHOW_TITLE 0  // Default: 0
 
 /**
  * Marlin Mode Title
@@ -655,15 +778,15 @@
  * is moved to the XY probing point.
  * If disabled, after homing the nozzle is moved directly to the XY homing point. This is useful
  * in case Marlin firmware is configured to use the probe for Z axis homing (e.g.
- * USE_PROBE_FOR_Z_HOMING enabled in Marlin firmware) to avoid a second probing after homing.
+ * "USE_PROBE_FOR_Z_HOMING" enabled in Marlin firmware) to avoid a second probing after homing.
  *
  * NOTES:
  *   - Enable it in case Marlin firmware is not configured to use the probe for Z axis homing
- *     (e.g. USE_PROBE_FOR_Z_HOMING disabled in Marlin firmware) or the XY probing point set
+ *     (e.g. "USE_PROBE_FOR_Z_HOMING" disabled in Marlin firmware) or the XY probing point set
  *     for homing is not reachable by the nozzle (e.g. due to HW limitations/constraints or
  *     printer specific configuration).
  *   - Disable it (preferably) in case Marlin firmware is configured to use the probe for Z axis
- *     homing (e.g. USE_PROBE_FOR_Z_HOMING enabled in Marlin firmware).
+ *     homing (e.g. "USE_PROBE_FOR_Z_HOMING" enabled in Marlin firmware).
  *
  *   Options: [disable: 0, enable: 1]
  */
@@ -687,13 +810,13 @@
  * Z Steppers Auto-Alignment (ABL)
  * It allows to align multiple Z stepper motors using a bed probe by probing one position per stepper.
  * Enable this setting to show an icon in ABL menu allowing to run G34 command (it requires
- * Z_STEPPER_AUTO_ALIGN enabled in Configuration_adv.h in Marlin firmware).
+ * "Z_STEPPER_AUTO_ALIGN" enabled in Configuration_adv.h in Marlin firmware).
  *
  * NOTE: Only for Marlin printers with one stepper driver per Z stepper motor and no Z timing belt.
  *
  *   Options: [disable: 0, enable: 1]
  */
-#define Z_STEPPER_ALIGNEMENT 0  // Default: 0
+#define Z_STEPPERS_ALIGNMENT 0  // Default: 0
 
 /**
  * TouchMI Settings (ABL)
@@ -763,6 +886,10 @@
 /**
  * Filament Runout Sensor
  * Select the type of filament runout sensor and its default enabled/disabled state.
+ *
+ * NOTE: Smart Filament Sensor (SFS) (value 2 or 3) is a sensor based on an encoder disc that
+ *       toggles runout pin as filament moves (e.g. the BigTreeTech SFS).
+ *
  *   Options: [Normal Disabled: 0, Normal Enabled: 1, Smart Disabled: 2, Smart Enabled: 3]
  */
 #define FIL_RUNOUT 0  // Default: 0
@@ -795,6 +922,10 @@
  * Smart Filament Runout Detection
  * Used in conjunction with an SFS (Smart Filament Sensor) based on an encoder disc that
  * toggles runout pin as filament moves.
+ *
+ * NOTE: This setting is taken into account by the TFT only in case "FIL_RUNOUT" setting is
+ *       set to 2 or 3 (an SFS is used).
+ *
  *   Unit: [distance in mm]
  *   Value range: [min: 1, max: 50]
  */
@@ -857,7 +988,7 @@
  *
  * NOTE: Error messages from printer will always play the error sound.
  *
- * Parameters:
+ * Settings:
  *   touch_sound:  Enable/disable this to control touch feedback sound.
  *   toast_sound:  Enable/disable this to control all toast notification sounds.
  *   alert_sound:  Enable/disable this to control all popup and alert sounds
@@ -1075,6 +1206,12 @@
  */
 
 /**
+ * Monitoring Debug
+ * Uncomment/Enable to monitor/show system resources usage in Monitoring menu.
+ */
+#define DEBUG_MONITORING  // Default: uncommented (enabled)
+
+/**
  * Generic Debug
  * Uncomment/Enable to enable arbitrary debug serial communication to SERIAL_DEBUG_PORT defined in board specific Pin_xx.h file.
  */
@@ -1131,8 +1268,8 @@
 #define SPEED_ID {"Sp.", "Fr."}  // (speed, flow rate)
 
 // Axes names displayed in Parameter Settings menu
-#define AXIS_DISPLAY_ID    {"X", "Y", "Z", "E0", "E1"}                                // (X, Y, Z, E0, E1)
-#define STEPPER_DISPLAY_ID {"X", "X2", "Y", "Y2", "Z", "Z2", "Z3", "Z4", "E0", "E1"}  // (X, X2, Y, Y2, Z, Z2, Z3, Z4, E0, E1)
+#define AXIS_DISPLAY_ID    {"X", "Y", "Z", "E0", "E1", "E2"}                                // (X, Y, Z, E0, E1)
+#define STEPPER_DISPLAY_ID {"X", "X2", "Y", "Y2", "Z", "Z2", "Z3", "Z4", "E0", "E1", "E2"}  // (X, X2, Y, Y2, Z, Z2, Z3, Z4, E0, E1, E2)
 
 // Manual Leveling
 // Move to four corner points to Leveling manually (Point 1, Point 2, Point 3, Point 4).
@@ -1204,7 +1341,7 @@
 
 /**
  * M701, M702: Marlin Filament Load / Unload G-codes Support
- * FILAMENT_LOAD_UNLOAD_GCODES option on Marlin configuration_adv.h need to be uncommented.
+ * "FILAMENT_LOAD_UNLOAD_GCODES" option in Configuration_adv.h in Marlin fw needs to be uncommented.
  * Adds a submenu to the movement menu for selecting load and unload actions.
  */
 #define LOAD_UNLOAD_M701_M702  // Default: uncommented (enabled)
@@ -1251,7 +1388,7 @@
  * In case LCD Encoder's sliding buttons (pin LCD_ENCA_PIN and LCD_ENCB_PIN) don't produce
  * any movement on menu, try to increase the delay (in MilliSeconds) (e.g. 64).
  */
-#ifdef MKS_TFT
+#if defined(MKS_TFT)
   #define LCD_ENC_DELAY           40  // in ms. Default: 8
   #define LCD_ENC_PULSES_PER_STEP  2  // Default: 4
   #define LCD_ENC_BUTTON_INTERVAL 20  // in ms. Default: 20

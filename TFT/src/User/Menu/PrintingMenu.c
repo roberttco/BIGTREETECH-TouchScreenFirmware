@@ -1,15 +1,6 @@
 #include "Printing.h"
 #include "includes.h"
 
-const GUI_RECT printinfo_val_rect[6] = {
-  {PS_ICON_VAL_X, PS_ICON_VAL_Y, PS_ICON_VAL_LG_EX, PS_ICON_VAL_Y + BYTE_HEIGHT},
-  {PS_ICON_VAL_X, PS_ICON_VAL_Y, PS_ICON_VAL_LG_EX, PS_ICON_VAL_Y + BYTE_HEIGHT},
-  {PS_ICON_VAL_X, PS_ICON_VAL_Y, PS_ICON_VAL_SM_EX, PS_ICON_VAL_Y + BYTE_HEIGHT},
-  {PS_ICON_VAL_X, PS_ICON_VAL_Y, PS_ICON_VAL_LG_EX, PS_ICON_VAL_Y + BYTE_HEIGHT},
-  {PS_ICON_VAL_X, PS_ICON_VAL_Y, PS_ICON_VAL_LG_EX, PS_ICON_VAL_Y + BYTE_HEIGHT},
-  {PS_ICON_VAL_X, PS_ICON_VAL_Y, PS_ICON_VAL_SM_EX, PS_ICON_VAL_Y + BYTE_HEIGHT}
-};
-
 #define PROGRESS_BAR_RAW_X0   (START_X)                                 // X0 aligned to first icon
 #ifdef PORTRAIT_MODE
   #define PROGRESS_BAR_RAW_X1 (START_X + 3 * ICON_WIDTH + 2 * SPACE_X)  // X1 aligned to last icon
@@ -31,26 +22,12 @@ const GUI_RECT printinfo_val_rect[6] = {
 #define PROGRESS_BAR_SLICE_WIDTH (PROGRESS_BAR_FULL_WIDTH / 10)       // 10% progress bar width
 
 #ifdef PORTRAIT_MODE
-  const GUI_RECT progressBar = {PROGRESS_BAR_X0, TITLE_END_Y + 1,
-                                PROGRESS_BAR_X1, PS_ICON_START_Y - PS_ICON_SPACE_Y - 1};
+  static const GUI_RECT progressBar = {PROGRESS_BAR_X0, TITLE_END_Y + 1,
+                                       PROGRESS_BAR_X1, PS_ICON_START_Y - PS_ICON_SPACE_Y - 1};
 #else
-  const GUI_RECT progressBar = {PROGRESS_BAR_X0, PS_ICON_START_Y + PS_ICON_HEIGHT * 2 + PS_ICON_SPACE_Y * 2 + 1,
-                                PROGRESS_BAR_X1, ICON_START_Y + ICON_HEIGHT + SPACE_Y - PS_ICON_SPACE_Y - 1};
+  static const GUI_RECT progressBar = {PROGRESS_BAR_X0, PS_ICON_START_Y + PS_ICON_HEIGHT * 2 + PS_ICON_SPACE_Y * 2 + 1,
+                                       PROGRESS_BAR_X1, ICON_START_Y + ICON_HEIGHT + SPACE_Y - PS_ICON_SPACE_Y - 1};
 #endif
-
-enum
-{
-  LIVE_INFO_ICON = (1 << 0),
-  LIVE_INFO_TOP_ROW = (1 << 1),
-  LIVE_INFO_BOTTOM_ROW = (1 << 2),
-};
-
-const uint8_t printingIcon[] = {ICON_PRINTING_NOZZLE, ICON_PRINTING_BED,    ICON_PRINTING_FAN,
-                                ICON_PRINTING_TIMER,  ICON_PRINTING_ZLAYER, ICON_PRINTING_SPEED};
-
-const uint8_t printingIcon2nd[] = {ICON_PRINTING_CHAMBER, ICON_PRINTING_FLOW};
-
-const char * const speedId[2] = {"Speed", "Flow "};
 
 #define TOGGLE_TIME     2000     // 1 seconds is 1000
 #define LAYER_DELTA     0.1      // minimal layer height change to update the layer display (avoid congestion in vase mode)
@@ -58,9 +35,12 @@ const char * const speedId[2] = {"Speed", "Flow "};
 #define MAX_TITLE_LEN   70
 #define TIME_FORMAT_STR "%02u:%02u:%02u"
 
-PROGRESS_DISPLAY progDisplayType;
-LAYER_TYPE layerDisplayType;
-char title[MAX_TITLE_LEN];
+enum
+{
+  LIVE_INFO_ICON = (1 << 0),
+  LIVE_INFO_TOP_ROW = (1 << 1),
+  LIVE_INFO_BOTTOM_ROW = (1 << 2),
+};
 
 enum
 {
@@ -79,6 +59,26 @@ enum
   ICON_POS_SPD,
 };
 
+static const GUI_RECT printingInfo_rect[6] = {
+  {PS_ICON_VAL_X, PS_ICON_VAL_Y, PS_ICON_VAL_LG_EX, PS_ICON_VAL_Y + BYTE_HEIGHT},
+  {PS_ICON_VAL_X, PS_ICON_VAL_Y, PS_ICON_VAL_LG_EX, PS_ICON_VAL_Y + BYTE_HEIGHT},
+  {PS_ICON_VAL_X, PS_ICON_VAL_Y, PS_ICON_VAL_SM_EX, PS_ICON_VAL_Y + BYTE_HEIGHT},
+  {PS_ICON_VAL_X, PS_ICON_VAL_Y, PS_ICON_VAL_LG_EX, PS_ICON_VAL_Y + BYTE_HEIGHT},
+  {PS_ICON_VAL_X, PS_ICON_VAL_Y, PS_ICON_VAL_LG_EX, PS_ICON_VAL_Y + BYTE_HEIGHT},
+  {PS_ICON_VAL_X, PS_ICON_VAL_Y, PS_ICON_VAL_SM_EX, PS_ICON_VAL_Y + BYTE_HEIGHT}
+};
+
+static const uint8_t printingIcon[] = {ICON_PRINTING_NOZZLE, ICON_PRINTING_BED,    ICON_PRINTING_FAN,
+                                       ICON_PRINTING_TIMER,  ICON_PRINTING_ZLAYER, ICON_PRINTING_SPEED};
+
+static const uint8_t printingIcon2nd[] = {ICON_PRINTING_CHAMBER, ICON_PRINTING_FLOW};
+
+static const char * const speedId[2] = {"Speed", "Flow "};
+
+static PROGRESS_DISPLAY progDisplayType;
+static LAYER_TYPE layerDisplayType;
+static char title[MAX_TITLE_LEN];
+
 static inline void setPauseResumeIcon(MENUITEMS * curmenu, bool paused)
 {
   curmenu->items[KEY_ICON_4].icon = paused ? ICON_RESUME : ICON_PAUSE;
@@ -88,6 +88,7 @@ static inline void setPauseResumeIcon(MENUITEMS * curmenu, bool paused)
 static void setLayerHeightText(char * layer_height_txt)
 {
   float layer_height;
+
   layer_height = coordinateGetAxis(Z_AXIS);
 
   if (layer_height > 0)
@@ -104,10 +105,10 @@ static void setLayerNumberTxt(char * layer_number_txt)
   if (layerNumber > 0)
   {
     if (layerCount > 0
-        #ifndef TFT70_V3_0
-          && layerCount < 1000  // there's no space to display layer number & count if the layer count is above 999
-        #endif
-       )
+      #ifndef TFT70_V3_0
+        && layerCount < 1000  // there's no space to display layer number & count if the layer count is above 999
+      #endif
+      )
     {
       sprintf(layer_number_txt, " %u/%u ", layerNumber, layerCount);
     }
@@ -188,15 +189,15 @@ void startPrinting(void)
 static void reDrawPrintingValue(uint8_t icon_pos, uint8_t draw_type)
 {
   LIVE_INFO lvIcon;
-  GUI_RECT const * curRect = &printinfo_val_rect[icon_pos];
+  GUI_RECT const * curRect = &printingInfo_rect[icon_pos];
   char tempstrTop[14];
   char tempstrBottom[14];
 
   lvIcon.enabled[2] = false;
 
-  if (icon_pos == ICON_POS_BED && currentBCIndex != 0)  // Bed & Chamber
+  if (icon_pos == ICON_POS_BED && currentBCIndex != 0)  // bed & chamber
     lvIcon.iconIndex = printingIcon2nd[0];
-  else if (icon_pos == ICON_POS_SPD && currentSpeedID != 0)  // Speed & Flow
+  else if (icon_pos == ICON_POS_SPD && currentSpeedID != 0)  // speed & flow
     lvIcon.iconIndex = printingIcon2nd[1];
   else
     lvIcon.iconIndex = printingIcon[icon_pos];
@@ -210,20 +211,20 @@ static void reDrawPrintingValue(uint8_t icon_pos, uint8_t draw_type)
     lvIcon.lines[0].font = FONT_SIZE_NORMAL;
     lvIcon.lines[0].fn_color = infoSettings.font_color;
     lvIcon.lines[0].text_mode = GUI_TEXTMODE_TRANS;
-    lvIcon.lines[0].text = (uint8_t *)tempstrTop;
+    lvIcon.lines[0].text = tempstrTop;
 
     switch (icon_pos)
     {
       case ICON_POS_EXT:
-        lvIcon.lines[0].text = (uint8_t *)heatDisplayID[currentTool];
+        lvIcon.lines[0].text = heatDisplayID[currentTool];
         break;
 
       case ICON_POS_BED:
-        lvIcon.lines[0].text = (uint8_t *)heatDisplayID[BED + currentBCIndex];
+        lvIcon.lines[0].text = heatDisplayID[BED + currentBCIndex];
         break;
 
       case ICON_POS_FAN:
-        lvIcon.lines[0].text = (uint8_t *)fanID[currentFan];
+        lvIcon.lines[0].text = fanID[currentFan];
         break;
 
       case ICON_POS_TIM:
@@ -237,13 +238,13 @@ static void reDrawPrintingValue(uint8_t icon_pos, uint8_t draw_type)
         if (layerDisplayType == SHOW_LAYER_BOTH)
           setLayerHeightText(tempstrTop);
         else if (layerDisplayType == CLEAN_LAYER_NUMBER || layerDisplayType == CLEAN_LAYER_BOTH)
-          lvIcon.lines[0].text = (uint8_t *)("        ");
+          lvIcon.lines[0].text = ("        ");
         else
-          lvIcon.lines[0].text = (uint8_t *)LAYER_TITLE;
+          lvIcon.lines[0].text = LAYER_TITLE;
         break;
 
       case ICON_POS_SPD:
-        lvIcon.lines[0].text = (uint8_t *)speedId[currentSpeedID];
+        lvIcon.lines[0].text = speedId[currentSpeedID];
         break;
 
       default:
@@ -264,7 +265,7 @@ static void reDrawPrintingValue(uint8_t icon_pos, uint8_t draw_type)
     lvIcon.lines[1].font = FONT_SIZE_NORMAL;
     lvIcon.lines[1].fn_color = infoSettings.font_color;
     lvIcon.lines[1].text_mode = GUI_TEXTMODE_TRANS;
-    lvIcon.lines[1].text = (uint8_t *)tempstrBottom;
+    lvIcon.lines[1].text = tempstrBottom;
 
     tempstrBottom[0] = 0;  // always initialize to empty string as default value
 
@@ -280,9 +281,9 @@ static void reDrawPrintingValue(uint8_t icon_pos, uint8_t draw_type)
 
       case ICON_POS_FAN:
         if (infoSettings.fan_percentage == 1)
-          sprintf(tempstrBottom, "%3d%%", fanGetCurPercent(currentFan));  // 4 chars
+          sprintf(tempstrBottom, "%3d%%", fanGetCurrentPercent(currentFan));  // 4 chars
         else
-          sprintf(tempstrBottom, "%3d ", fanGetCurSpeed(currentFan));  // 4 chars
+          sprintf(tempstrBottom, "%3d ", fanGetCurrentSpeed(currentFan));  // 4 chars
         break;
 
       case ICON_POS_TIM:
@@ -298,11 +299,11 @@ static void reDrawPrintingValue(uint8_t icon_pos, uint8_t draw_type)
         else if (layerDisplayType == SHOW_LAYER_NUMBER || layerDisplayType == SHOW_LAYER_BOTH)  // layer number or height & number (both)
           setLayerNumberTxt(tempstrBottom);
         else
-          lvIcon.lines[1].text = (uint8_t *)("        ");
+          lvIcon.lines[1].text = ("        ");
         break;
 
       case ICON_POS_SPD:
-        sprintf(tempstrBottom, "%3d%%", speedGetCurPercent(currentSpeedID));
+        sprintf(tempstrBottom, "%3d%%", speedGetCurrentPercent(currentSpeedID));
         break;
 
       default:
@@ -315,8 +316,9 @@ static void reDrawPrintingValue(uint8_t icon_pos, uint8_t draw_type)
   }
 
   RAPID_SERIAL_LOOP();  // perform backend printing loop before drawing to avoid printer idling
+
   showLiveInfo(icon_pos, &lvIcon, draw_type & LIVE_INFO_ICON);
-}  // reDrawPrintingValue
+} // reDrawPrintingValue
 
 static inline void toggleInfo(void)
 {
@@ -325,12 +327,14 @@ static inline void toggleInfo(void)
     if (infoSettings.hotend_count > 1)
     {
       currentTool = (currentTool + 1) % infoSettings.hotend_count;
+
       reDrawPrintingValue(ICON_POS_EXT, LIVE_INFO_TOP_ROW | LIVE_INFO_BOTTOM_ROW);
     }
 
     if (infoSettings.chamber_en == 1)
     {
       TOGGLE_BIT(currentBCIndex, 0);
+
       reDrawPrintingValue(ICON_POS_BED, LIVE_INFO_ICON | LIVE_INFO_TOP_ROW | LIVE_INFO_BOTTOM_ROW);
     }
     else
@@ -349,6 +353,7 @@ static inline void toggleInfo(void)
     }
 
     TOGGLE_BIT(currentSpeedID, 0);
+
     reDrawPrintingValue(ICON_POS_SPD, LIVE_INFO_ICON | LIVE_INFO_TOP_ROW | LIVE_INFO_BOTTOM_ROW);
 
     speedQuery();
@@ -409,8 +414,8 @@ static inline void drawLiveInfo(void)
   // progress
   GUI_SetColor(PB_BORDER);
   GUI_DrawRect(progressBar.x0 - 1, progressBar.y0 - 1, progressBar.x1 + 1, progressBar.y1 + 1);  // draw progress bar border
-  reDrawProgressBar(0, 100, PB_BCKG, PB_STRIPE_REMAINING);  // draw progress bar
-  reDrawProgress(0);  // draw progress
+  reDrawProgressBar(0, 100, PB_BCKG, PB_STRIPE_REMAINING);                                       // draw progress bar
+  reDrawProgress(0);                                                                             // draw progress
   GUI_RestoreColorDefault();
 }
 
@@ -427,11 +432,11 @@ static inline void drawPrintInfo(void)
                           rect_of_keySS[KEY_INFOBOX].y0 + STATUS_MSG_ICON_YOFFSET,
                           rect_of_keySS[KEY_INFOBOX].x1 - STATUS_MSG_TITLE_XOFFSET,
                           rect_of_keySS[KEY_INFOBOX].y1 - STATUS_MSG_ICON_YOFFSET,
-                          (uint8_t *)textSelect((isAborted() == true) ? LABEL_PROCESS_ABORTED : LABEL_PRINT_FINISHED));
+                          (uint8_t *) textSelect(isAborted() ? LABEL_PROCESS_ABORTED : LABEL_PRINT_FINISHED));
 
   GUI_SetColor(INFOMSG_FONT_COLOR);
   GUI_SetBkColor(INFOMSG_BG_COLOR);
-  GUI_DispStringInPrect(&msgRect, LABEL_CLICK_FOR_MORE);
+  GUI_DispStringInPrect(statusGetMsgRect(), LABEL_CLICK_FOR_MORE);
   GUI_RestoreColorDefault();
 }
 
@@ -440,39 +445,39 @@ void printSummaryPopup(void)
   char showInfo[300];
   char tempstr[60];
 
-  time_2_string(showInfo, (char *)textSelect(LABEL_PRINT_TIME), infoPrintSummary.time);
+  time_2_string(showInfo, textSelect(LABEL_PRINT_TIME), infoPrintSummary.time);
 
   if (isAborted() == true)
   {
-    sprintf(tempstr, "\n\n%s", (char *)textSelect(LABEL_PROCESS_ABORTED));
+    sprintf(tempstr, "\n\n%s", textSelect(LABEL_PROCESS_ABORTED));
     strcat(showInfo, tempstr);
   }
   else if (infoPrintSummary.length + infoPrintSummary.weight + infoPrintSummary.cost == 0)  // all equals 0
   {
-    strcat(showInfo, (char *)textSelect(LABEL_NO_FILAMENT_STATS));
+    strcat(showInfo, textSelect(LABEL_NO_FILAMENT_STATS));
   }
   else
   {
     if (infoPrintSummary.length > 0)
     {
-      sprintf(tempstr, (char *)textSelect(LABEL_FILAMENT_LENGTH), infoPrintSummary.length);
+      sprintf(tempstr, textSelect(LABEL_FILAMENT_LENGTH), infoPrintSummary.length);
       strcat(showInfo, tempstr);
     }
 
     if (infoPrintSummary.weight > 0)
     {
-      sprintf(tempstr, (char *)textSelect(LABEL_FILAMENT_WEIGHT), infoPrintSummary.weight);
+      sprintf(tempstr, textSelect(LABEL_FILAMENT_WEIGHT), infoPrintSummary.weight);
       strcat(showInfo, tempstr);
     }
 
     if (infoPrintSummary.cost > 0)
     {
-      sprintf(tempstr, (char *)textSelect(LABEL_FILAMENT_COST), infoPrintSummary.cost);
+      sprintf(tempstr, textSelect(LABEL_FILAMENT_COST), infoPrintSummary.cost);
       strcat(showInfo, tempstr);
     }
   }
 
-  popupReminder(DIALOG_TYPE_INFO, (uint8_t *)infoPrintSummary.name, (uint8_t *)showInfo);
+  popupReminder(DIALOG_TYPE_INFO, infoPrintSummary.name, showInfo);
 }
 
 void menuPrinting(void)
@@ -549,6 +554,7 @@ void menuPrinting(void)
     {
       nowHeat.T[currentTool].current = heatGetCurrentTemp(currentTool);
       nowHeat.T[currentTool].target = heatGetTargetTemp(currentTool);
+
       reDrawPrintingValue(ICON_POS_EXT, LIVE_INFO_BOTTOM_ROW);
     }
 
@@ -557,13 +563,15 @@ void menuPrinting(void)
     {
       nowHeat.T[BED].current = heatGetCurrentTemp(BED);
       nowHeat.T[BED].target = heatGetTargetTemp(BED);
+
       reDrawPrintingValue(ICON_POS_BED, LIVE_INFO_BOTTOM_ROW);
     }
 
     // check fan speed change
-    if (nowFan[currentFan] != fanGetCurSpeed(currentFan))
+    if (nowFan[currentFan] != fanGetCurrentSpeed(currentFan))
     {
-      nowFan[currentFan] = fanGetCurSpeed(currentFan);
+      nowFan[currentFan] = fanGetCurrentSpeed(currentFan);
+
       reDrawPrintingValue(ICON_POS_FAN, LIVE_INFO_BOTTOM_ROW);
     }
 
@@ -582,6 +590,7 @@ void menuPrinting(void)
     if (oldProgress != updatePrintProgress())
     {
       reDrawProgress(oldProgress);
+
       oldProgress = getPrintProgress();
     }
 
@@ -598,6 +607,7 @@ void menuPrinting(void)
         if (layerDrawEnabled == true)
         {
           usedLayerHeight = curLayerHeight;
+
           reDrawPrintingValue(ICON_POS_Z, (layerDisplayType == SHOW_LAYER_BOTH) ? LIVE_INFO_TOP_ROW : LIVE_INFO_BOTTOM_ROW);
         }
 
@@ -615,14 +625,16 @@ void menuPrinting(void)
       if (curLayerNumber != prevLayerNumber)
       {
         prevLayerNumber = curLayerNumber;
+
         reDrawPrintingValue(ICON_POS_Z, LIVE_INFO_BOTTOM_ROW);
       }
     }
 
     // check change in speed or flow
-    if (curspeed[currentSpeedID] != speedGetCurPercent(currentSpeedID))
+    if (curspeed[currentSpeedID] != speedGetCurrentPercent(currentSpeedID))
     {
-      curspeed[currentSpeedID] = speedGetCurPercent(currentSpeedID);
+      curspeed[currentSpeedID] = speedGetCurrentPercent(currentSpeedID);
+
       reDrawPrintingValue(ICON_POS_SPD, LIVE_INFO_BOTTOM_ROW);
     }
 
@@ -631,6 +643,7 @@ void menuPrinting(void)
     {
       lastPause = isPaused();
       setPauseResumeIcon(&printingItems, lastPause);
+
       menuDrawItem(&printingItems.items[KEY_ICON_4], KEY_ICON_4);
     }
 
@@ -650,15 +663,18 @@ void menuPrinting(void)
     toggleInfo();
 
     KEY_VALUES key_num = menuKeyGetValue();
+
     switch (key_num)
     {
       case PS_KEY_0:
         heatSetCurrentIndex(LAST_NOZZLE);  // preselect last selected nozzle for "Heat" menu
+
         OPEN_MENU(menuHeat);
         break;
 
       case PS_KEY_1:
         heatSetCurrentIndex(BED);  // preselect the bed for "Heat" menu
+
         OPEN_MENU(menuHeat);
         break;
 
@@ -668,6 +684,7 @@ void menuPrinting(void)
 
       case PS_KEY_3:
         progDisplayType = (progDisplayType + 1) % 3;
+
         reDrawPrintingValue(ICON_POS_TIM, LIVE_INFO_TOP_ROW | LIVE_INFO_BOTTOM_ROW);
         break;
 
@@ -695,9 +712,9 @@ void menuPrinting(void)
         if (lastPrinting == true)  // if printing
         { // Pause button
           if (getHostDialog())
-            addToast(DIALOG_TYPE_ERROR, (char *)textSelect(LABEL_BUSY));
+            addToast(DIALOG_TYPE_ERROR, textSelect(LABEL_BUSY));
           else if (getPrintRunout())
-            addToast(DIALOG_TYPE_ERROR, (char *)textSelect(LABEL_FILAMENT_RUNOUT));
+            addToast(DIALOG_TYPE_ERROR, textSelect(LABEL_FILAMENT_RUNOUT));
           else
             pausePrint(!isPaused(), PAUSE_NORMAL);
         }
